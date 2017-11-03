@@ -19,6 +19,7 @@ Sub Initialize
 
 	Dim ws As New NotesUIWorkspace
 	Dim session As New NotesSession
+	Dim profile As NotesDocument
 
 	Dim db As NotesDatabase
 	Dim emfView As NotesView
@@ -28,6 +29,8 @@ Sub Initialize
 	Dim emfDoc As NotesDocument	
 	
 	Dim medoVersion As String
+	Dim sysAlias As String
+	Dim baseAlias As String
 	
 	pathToMainDoc = ""
 	pathToP7s = ""
@@ -50,6 +53,13 @@ Sub Initialize
 		Error 1408, "У вас недостаточно прав."
 	End If
 	
+	'Get SysAlias and BaseAlias
+	Set profile = db.Getprofiledocument("BaseSets")
+	sysAlias = profile.SysAlias(0)
+	baseAlias = profile.BaseAlias(0)
+	If sysAlias = "" Or baseAlias = "" Then Error 1408, "Не удалось получить данные из профайла базы"
+	
+	
 	Set emfView = openView("(Emfs)", db)	
 
 	pathToTempDir = Environ("Temp")
@@ -58,7 +68,7 @@ Sub Initialize
 	End If	
 	pathToTempDir = pathToTempDir + "\"
 	
-	'Check document has main document in pdf/doc/docx foramt and number of pages is indicated; check document has p7s
+	'Check document has main document in pdf/doc/docx format and number of pages is indicated; check document has p7s
 	'Extract nedded files
 	Set dc = emfView.GetAllDocumentsByKey(doc.DocID(0))
 
@@ -83,8 +93,10 @@ Sub Initialize
 		ElseIf emfDoc.DocsType(0) = "2" Then 'Attachment of type "Приложение"
 		
 			If emfDoc.HasItem("Body") Then
-				Call processAttachments(emfDoc)													
+				Call processAttachment(emfDoc)																	
 			End If	
+			
+				
 												
 		End If		
 		Set emfDoc = dc.GetNextDocument(emfDoc)				
@@ -134,6 +146,10 @@ Sub Initialize
 	adapterDoc.InRS_Appl = appendixCounter				'Number of attachments
 	adapterDoc.InRS_Pages = numberOfPages				'Document number of pages
 	adapterDoc.medo_version = medoVersion				'MEDO version
+	Stop
+	adapterDoc.sysAlias = sysAlias						'SysAlias
+	adapterDoc.baseAlias = baseAlias					'BaseAlias
+	
 
 	Set addressesDoc = addressesDc.GetFirstDocument		'Addressees	
 	Do While Not addressesDoc Is Nothing 
@@ -191,22 +207,61 @@ TRAP_ERROR:
 	End If	
 
 End Sub
-Sub processAttachments(emfDoc As NotesDocument)
+Sub processAttachment(emfDoc As NotesDocument)
 	Dim rtitem As Variant
+	Dim eObject As NotesEmbeddedObject
+	Dim extractFileName As String
+
+	
 	Set rtitem = emfDoc.GetFirstItem("Body")
 	If (rtitem.Type = RICHTEXT) Then
 		If Not IsEmpty(rtitem.EmbeddedObjects) Then	
-			ForAll o In rtitem.EmbeddedObjects
-				If (o.Type = EMBED_ATTACHMENT) Then
-					pathToAppendix = pathToTempDir & o.Source 						
-					Call o.ExtractFile(pathToAppendix)
-					ReDim Preserve appendixes(appendixCounter)
-					appendixes(appendixCounter) = pathToAppendix
-					appendixCounter = appendixCounter + 1
+			Set eObject = rtitem.EmbeddedObjects(0)
+			If (eObject.Type = EMBED_ATTACHMENT) Then
+				If appendixCounter < 10 Then
+					extractFileName = "attachment00" + CStr(appendixCounter) 	
+				ElseIf	appendixCounter < 100 Then
+					extractFileName = "attachment0" + CStr(appendixCounter)
+				Else
+					extractFileName = "attachment" + CStr(appendixCounter)
 				End If
-			End ForAll
+				extractFileName = extractFileName + "." + StrRightBack(eObject.Source, ".")
+				pathToAppendix = pathToTempDir & extractFileName 						
+				Call eObject.ExtractFile(pathToAppendix)
+				ReDim Preserve appendixes(appendixCounter)
+				appendixes(appendixCounter) = pathToAppendix
+				
+				'If attachment has e-signature
+				If emfDoc.HasItem("BodyAppendix") Then
+					Set rtitem = emfDoc.GetFirstItem("BodyAppendix")
+					If (rtitem.Type = RICHTEXT) Then
+						If Not IsEmpty(rtitem.EmbeddedObjects) Then	
+							Set eObject = rtitem.EmbeddedObjects(0)
+							If (eObject.Type = EMBED_ATTACHMENT) Then
+								If appendixCounter < 10 Then
+									extractFileName = "attachmentsSignature00" + CStr(appendixCounter) 	
+								ElseIf	appendixCounter < 100 Then
+									extractFileName = "attachmentsSignature0" + CStr(appendixCounter)
+								Else
+									extractFileName = "attachmentsSignature" + CStr(appendixCounter)
+								End If
+								extractFileName = extractFileName + "." + StrRightBack(eObject.Source, ".")
+								pathToAppendix = pathToTempDir & extractFileName						
+								Call eObject.ExtractFile(pathToAppendix)
+								ReDim Preserve appendixes(appendixCounter)
+								appendixes(appendixCounter) = pathToAppendix								
+							End If
+						End If
+					End If
+				End If
+				
+				appendixCounter = appendixCounter + 1
+			End If
 		End If
 	End If
+	
+	
+	
 End Sub
 
 

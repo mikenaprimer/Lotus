@@ -1,8 +1,3 @@
-%REM
-	Agent m\Приём уведомлений
-	Created Oct 23, 2017 by Михаил Александрович Дудин/AKO/KIROV/RU
-	Description: Comments for Agent
-%END REM
 Option Public
 Option Declare
 Use "XmlNodeReader"
@@ -18,7 +13,7 @@ Dim archivePath As String
 
 
 Sub Initialize
-	'NB! Vars in (Declarations)
+	'TODO NB! Vars in (Declarations)
 	Dim fileName As String
 	Dim Profile As NotesDocument
 	Dim i As Integer
@@ -37,15 +32,13 @@ Sub Initialize
 	Dim reader As New XmlNodeReader
 	
 	Call tmpdoc.ReplaceItemValue("medo_docType", "Уведомление")
-	'Call tmpdoc.ReplaceItemValue("medo_docType", "Квитанция")
-	
-	
 	If tmpdoc.getitemvalue("medo_docType")(0) = "Уведомление" Then
-		'0001503581
-		'0001515730
+		Call processNotifications("0001503581", "notification.xml", reader, archivePath)
 		Call processNotifications("0001515730", "notification.xml", reader, archivePath)
 	End If	
 	
+	
+	Call tmpdoc.ReplaceItemValue("medo_docType", "Квитанция")
 	If tmpdoc.getitemvalue("medo_docType")(0) = "Квитанция" Then		
 		Call processTickets("ЭСД МЭДО (Квитанция) JZHDG800", "acknowledgment.xml", reader)
 	End If	
@@ -59,6 +52,43 @@ Sub Initialize
 	
 	
 End Sub
+Sub Terminate
+	
+End Sub
+
+
+'копируем файлы в папку In_Copy
+Function CopyFolder(folder As String) As Integer
+	'Added
+	Dim FullFileName As String
+	
+	Dim filename As String
+	Dim filename2 As String
+	Dim folder2 As String
+	
+	folder2 = "C:\MEDO\In_Copy\" & folder & Right(CStr(Now),2)
+	MkDir folder2
+	
+	
+	CopyFolder = 0
+	'удаление файлов
+	Err = 0
+	On Error Resume Next
+	fileName$ = Dir$(MainPath & folder & "\*.*", 0)
+	If Err Then
+		Print "Копирование папки - указанная папка не найдена: " & folder
+		Exit Function
+	End If
+	
+	Do While fileName$ <> ""
+		FullFileName = MainPath & folder & "\" & filename
+		fileName2	= 	folder2 & "\" & filename
+		FileCopy FullFileName, fileName2		
+		fileName$ = Dir$()
+	Loop		
+	On Error GoTo 0		
+	CopyFolder = 1
+End Function
 %REM
 	Function convertDateTime
 	Description: Comments for Function
@@ -152,7 +182,9 @@ Function CheckCodeType(folder As String, fname As String) As Integer
 	Loop Until inputStream.IsEOS
 			
 End Function
-Sub createNotificationDoc(adapterDb As NotesDatabase, tempDoc As NotesDocument)		
+Sub createTicketDoc()
+	
+	Dim originalID As String
 	
 	'Open server MEDO adapter database (DELO2/delo/adapter_medo27.nsf)
 	Dim profile As NotesDocument
@@ -163,95 +195,151 @@ Sub createNotificationDoc(adapterDb As NotesDatabase, tempDoc As NotesDocument)
 	serverMEDOdbPath = profile.serverMEDOdbPath(0) 'delo/adapter_medo27		
 	Dim serverAdapterDb As New NotesDatabase(serverMEDOdbServer, serverMEDOdbPath)	
 	
-	'Create entry in server MEDO adapter database
-	Dim aDoc As New NotesDocument(serverAdapterDb)
-	'Dim dateTime As New NotesDateTime("")
-	'Call dateTime.SetNow
-	
-	'TODO ???
-	If tmpdoc.InCard_Subj(0)="" Then Call tempDoc.ReplaceItemValue("InCard_Subj", tempDoc.InCard_Kind(0))
-		
-	Call aDoc.ReplaceItemValue("Form", "InNotify")
-	Call aDoc.ReplaceItemValue("medo_notGUID", tempDoc.medo_notGUID(0))
-	Call aDoc.ReplaceItemValue("RegNumber", tempDoc.RegNumber(0))
-	Call aDoc.ReplaceItemValue("RegDate", tempDoc.RegDate(0))
-	Call aDoc.ReplaceItemValue("RefusedReason", tempDoc.RefusedReason(0))
-	Call aDoc.ReplaceItemValue("Status", tempDoc.Status(0))
-	Call aDoc.ReplaceItemValue("Comment", tempDoc.Comment(0))
-	Call aDoc.ReplaceItemValue("ProcessDate", tempDoc.ProcessDate(0))	
-	
-	
 	'Find relative entry in Outgoings and get needed data
 	Dim outSendView As NotesView
 	Set outSendView = serverAdapterDb.GetView("(OutSend)")
 	Dim sendDoc As NotesDocument		
-	Set sendDoc = outSendView.Getdocumentbykey(Replace(tempDoc.medo_notGUID(0), "-", ""), true)
-	If sendDoc Is Nothing Then Error 1408, "Не удалось найти связанный документ в отправленных"
-	Dim originalID As String
+	'Set sendDoc = outSendView.Getdocumentbykey(Replace(tmpDoc.adapterDoc_GUID(0), "-", ""), True)
+	Set sendDoc = outSendView.Getdocumentbykey(tmpDoc.MessegeGUID(0), True)
+	
+	'If no documents are found than, most likely, this ticket is for notification and we do not need to handle it
+	If sendDoc Is Nothing Then Exit Sub 'Error 1408, "Не удалось найти связанный документ в отправленных"
 	originalID = sendDoc.MEDO_UNID(0)
 	If originalID = "" Then Error 1408, "Не удалось получить ID оригинального документа"
-
-	'TODO uncomment, test (can't open debug databese)
+	
+	'Create entry in server MEDO adapter database
+	Dim aDoc As New NotesDocument(serverAdapterDb)
+	Dim dateTime As New NotesDateTime("")
+	Call dateTime.SetNow
+	Call aDoc.ReplaceItemValue("Form", "InTicket")
+	Call aDoc.ReplaceItemValue("MessegeGUID", tmpDoc.MessegeGUID(0))
+	Call aDoc.ReplaceItemValue("Accepted", tmpDoc.accepted(0))
+	Call aDoc.ReplaceItemValue("deliveryDate", convertDateTime(Left(tmpDoc.deliveryDate(0), 10)))
+	Call aDoc.ReplaceItemValue("FromOrg", tmpDoc.fromOrg(0))
+	Call aDoc.ReplaceItemValue("ProcessDate", dateTime)	
+	Call aDoc.ReplaceItemValue("Comment", tmpDoc.comment(0))	
+	
+	'TODO uncomment when release
 	Dim originalDb As NotesDatabase
 	'Call OpenAllByAlias(originalDb, sendDoc.sysAlias(0), sendDoc.baseAlias(0))
 	Set originalDb = New NotesDatabase("DELO1/AKO/KIROV/RU", "debug\AkOUK")	
+	Dim originalDoc As NotesDocument
+	Set originalDoc = originalDb.Getdocumentbyunid(originalID)
+	If originalDoc Is Nothing Then Error 1408, "Не удалось найти оригинальный документ в базе делопроизводства"
+	
 	
 	'Create entry in original database (~Исходящие)	
 	Dim oDoc As NotesDocument
 	Set oDoc = New NotesDocument(originalDb)
 	Call oDoc.ReplaceItemValue("Form", "Notification")
-	Call oDoc.ReplaceItemValue("PDocID", originalID)	
-	Call oDoc.ReplaceItemValue("RegNumber", tempDoc.RegNumber(0))
-	Call oDoc.ReplaceItemValue("RegDate", tempDoc.RegDate(0))
-	Call oDoc.ReplaceItemValue("RefusedReason", tempDoc.RefusedReason(0))
-	Call oDoc.ReplaceItemValue("Status", tempDoc.Status(0))
-	Call oDoc.ReplaceItemValue("Comment", tempDoc.Comment(0))
-	Call oDoc.ReplaceItemValue("ProcessDate", tempDoc.ProcessDate(0))
+	Call oDoc.ReplaceItemValue("PDocID", originalID)
+	Call oDoc.ReplaceItemValue("DocID", oDoc.UniversalID)
+	Call oDoc.ReplaceItemValue("h_Readers", originalDoc.h_Readers) 
+	Call oDoc.ReplaceItemValue("h_Authors", originalDoc.h_Authors)
+	Call oDoc.ReplaceItemValue("Status", "Квитанция: " + tmpDoc.accepted(0))
+	'Call doc.ReplaceItemValue("SendDate", convertDateTime(Left(tmpDoc.sendDate(0), 10)))
+	'Call doc.ReplaceItemValue("FromOrg", tmpDoc.fromOrg(0))
+	Call oDoc.ReplaceItemValue("ProcessDate", dateTime)	
+	Call oDoc.ReplaceItemValue("Comment", tmpDoc.comment(0))
+		
+	
+	Call aDoc.save(True,True)
+	Call oDoc.save(True,True)
+	
+End Sub
+Sub createNotificationDoc()		
+	
+	'Open server MEDO adapter database (DELO2/delo/adapter_medo27.nsf)
+	Dim profile As NotesDocument
+	Set profile = db.GetProfileDocument("IO_Setup")
+	Dim serverMEDOdbServer As String
+	Dim serverMEDOdbPath As String
+	serverMEDOdbServer = profile.serverMEDOdbServer(0) 'DELO2\AKO\KIROV\RU
+	serverMEDOdbPath = profile.serverMEDOdbPath(0) 'delo/adapter_medo27		
+	Dim serverAdapterDb As New NotesDatabase(serverMEDOdbServer, serverMEDOdbPath)	
+	
+	'Find relative entry in adapter's outgoings and get needed data
+	Dim outSendView As NotesView
+	Set outSendView = serverAdapterDb.GetView("(OutSend)")
+	Dim sendDoc As NotesDocument		
+	'Set sendDoc = outSendView.Getdocumentbykey(Replace(tmpDoc.adapterDoc_GUID(0), "-", ""), True)
+	Set sendDoc = outSendView.Getdocumentbykey(tmpDoc.adapterDoc_GUID(0), True)
+	If sendDoc Is Nothing Then Error 1408, "Не удалось найти связанный документ в отправленных"
+	Dim originalID As String
+	originalID = sendDoc.MEDO_UNID(0)
+	If originalID = "" Then Error 1408, "Не удалось получить ID оригинального документа"
+	
+	'Create entry in server MEDO adapter database
+	Dim aDoc As New NotesDocument(serverAdapterDb)
+	Dim dateTime As New NotesDateTime("")
+	Call dateTime.SetNow	
+	Call aDoc.ReplaceItemValue("Form", "InNotify")
+	Call aDoc.ReplaceItemValue("adapterDoc_GUID", tmpDoc.adapterDoc_GUID(0))
+	Call aDoc.ReplaceItemValue("originalDoc_DocID", originalID)
+	Call aDoc.ReplaceItemValue("RegNumOriginal", tmpDoc.RegNumOriginal(0))
+	Call aDoc.ReplaceItemValue("RegDateOriginal", tmpDoc.RegDateOriginal(0))
+	Call aDoc.ReplaceItemValue("Status", tmpDoc.Status(0))
+	If tmpDoc.notificationType(0) = "documentAccepted" Then
+		Call aDoc.ReplaceItemValue("regNumOSS", tmpDoc.regNumOSS(0))
+		Call aDoc.ReplaceItemValue("regDateOSS", tmpDoc.regDateOSS(0))
+	ElseIf tmpDoc.notificationType(0) = "documentRefused" Then
+		Call aDoc.ReplaceItemValue("RefusedReason", tmpDoc.RefusedReason(0))
+	End If	
+	Call aDoc.ReplaceItemValue("ProcessDate", dateTime)	
+	Call aDoc.ReplaceItemValue("ProcessDateOSS", tmpDoc.ProcessDateOSS(0))	
+	Call aDoc.ReplaceItemValue("Comment", tmpDoc.Comment(0))
+
+
+	'TODO uncomment when release
+	Dim originalDb As NotesDatabase
+	'Call OpenAllByAlias(originalDb, sendDoc.sysAlias(0), sendDoc.baseAlias(0))
+	Set originalDb = New NotesDatabase("DELO1/AKO/KIROV/RU", "debug\AkOUK")	
+	Dim originalDoc As NotesDocument
+	Set originalDoc = originalDb.Getdocumentbyunid(originalID)
+	If originalDoc Is Nothing Then Error 1408, "Не удалось найти оригинальный документ в базе делопроизводства"
+	
+	
+	'Create entry in original database (~Исходящие)	
+	Dim oDoc As NotesDocument
+	Set oDoc = New NotesDocument(originalDb)
+	Call oDoc.ReplaceItemValue("Form", "Notification")
+	Call oDoc.ReplaceItemValue("PDocID", originalID)
+	Call oDoc.ReplaceItemValue("DocID", oDoc.UniversalID)
+	Call oDoc.ReplaceItemValue("h_Readers", originalDoc.h_Readers) 
+	Call oDoc.ReplaceItemValue("h_Authors", originalDoc.h_Authors)
+	Call oDoc.ReplaceItemValue("RegNumOriginal", tmpDoc.RegNumOriginal(0))
+	Call oDoc.ReplaceItemValue("RegDateOriginal", tmpDoc.RegDateOriginal(0))
+	Call oDoc.ReplaceItemValue("Status", tmpDoc.Status(0))
+	If tmpDoc.notificationType(0) = "documentAccepted" Then
+		Call oDoc.ReplaceItemValue("regNumOSS", tmpDoc.regNumOSS(0))
+		Call oDoc.ReplaceItemValue("regDateOSS", tmpDoc.regDateOSS(0))
+	ElseIf tmpDoc.notificationType(0) = "documentRefused" Then
+		Call oDoc.ReplaceItemValue("RefusedReason", tmpDoc.RefusedReason(0))
+	End If	
+	Call oDoc.ReplaceItemValue("ProcessDate", dateTime)
+	Call oDoc.ReplaceItemValue("ProcessDateOSS", tmpDoc.ProcessDateOSS(0))	
+	Call oDoc.ReplaceItemValue("Comment", tmpDoc.Comment(0))
+	
+	'TODO send email
 	
 	Call aDoc.save(True, True)
 	Call oDoc.Save(True, True)
 
 	
 End Sub
-%REM
-	Copy all files from source directory to destination directory
-	sourcePath: absolute path to directory, e.g	C:/root/qwe
-	destinationPath: absolute path to directory, e.g D:/copy/copy_qwe
-	NB! All but last levels in the destination path hierarchy must be alreaty created
-%END REM
-
-Function copyDir(sourcePath As String, destinationPath As String)
-	
-	'TODO test once again, revise [.] and [..]
-	
-	Dim filename As String
-	Dim sourceFile As String
-	Dim destinationFile As String
-	
-	If Dir$(destinationPath, 16) = "" Then
-		MkDir destinationPath
-	End If
-	
-	fileName = Dir$(sourcePath & "\*.*", 0)
-	Do While fileName <> ""
-		sourceFile = sourcePath & "\" & filename
-		destinationFile	= 	destinationPath & "\" & filename
-		FileCopy sourceFile, destinationFile		
-		fileName = Dir$()
-	Loop		
-	
-End Function
 Sub processTickets(ticketDir As String, xmlfilename As String, reader As XmlNodeReader)
 	On Error GoTo TRAP_ERROR
+	
+	'TODO uncomment send problem notification when release
 	
 	Dim codetype As Integer
 	Dim prefix As String
 	
-	Dim ticketGUID As String
+	Dim messegeGUID As String
 	Dim accepted As String
 	Dim comment As String
 	Dim fromOrg As String
-	Dim sendDate As String
+	Dim deliveryDate As String
 	
 	'Get encoding of file and read it
 	codetype = CheckCodeType(MainPath & ticketDir, xmlfilename)
@@ -263,54 +351,40 @@ Sub processTickets(ticketDir As String, xmlfilename As String, reader As XmlNode
 	prefix = reader.thisNode.Lastchild.Prefix
 	If prefix = "" Then Error 1408, "Отсутствует префикс в XML файле уведомления"
 		
-	Stop
 	
-	'Parse xml	
-	ticketGUID = reader.get(prefix + ":communication." + prefix + ":acknowledgment.@" + prefix + ":uid")
-	If ticketGUID = "" Then Error 1408, "Не удалось извлечь GUID документа из квитанции"
+	'Message GUID
+	messegeGUID = reader.get(prefix + ":communication." + prefix + ":acknowledgment.@" + prefix + ":uid")
+	If messegeGUID = "" Then Error 1408, "Не удалось извлечь GUID документа из квитанции"
+	Call tmpdoc.Replaceitemvalue("MessegeGUID", messegeGUID)	
 	
+	'Organization to which the message was sent
 	fromOrg = reader.get(prefix + ":communication." + prefix + ":header." + prefix + ":source." + prefix + ":organization")
 	If fromOrg = "" Then Error 1408, "Не удалось извлечь название организации из квитанции"
+	Call tmpdoc.Replaceitemvalue("fromOrg", fromOrg)
 	
-	sendDate = reader.get(prefix + ":communication." + prefix + ":acknowledgment." + prefix + ":time")
-	If sendDate = "" Then Error 1408, "Не удалось извлечь вермя отправки из квитанции"
+	'Date/time of delivery
+	deliveryDate = reader.get(prefix + ":communication." + prefix + ":acknowledgment." + prefix + ":time")
+	If deliveryDate = "" Then Error 1408, "Не удалось извлечь время отправки из квитанции"
+	Call tmpdoc.Replaceitemvalue("deliveryDate", deliveryDate)
 			
 	accepted = reader.get(prefix + ":communication." + prefix + ":acknowledgment." + prefix + ":accepted")
 	If accepted = "" Then Error 1408, "Не удалось извлечь результат доставки из квитанции"
 	If LCase(accepted) = "false" Then
-		accepted = "Успех"
+		accepted = "Сообщение успешно доставлено"
 	Else
-		accepted = "Неудача"
+		accepted = "Сообщение доставлено с ошибкой"
 	End If
+	Call tmpdoc.Replaceitemvalue("accepted", accepted)
 	
 	comment = reader.get(prefix + ":communication." + prefix + ":acknowledgment." + prefix + ":comment")
+	Call tmpdoc.Replaceitemvalue("comment", comment)	
 	
+	Call createTicketDoc()
 	
-	'Open server MEDO adapter database (DELO2/delo/adapter_medo27.nsf)
-	Dim profile As NotesDocument
-	Set profile = db.GetProfileDocument("IO_Setup")
-	Dim serverMEDOdbServer As String
-	Dim serverMEDOdbPath As String
-	serverMEDOdbServer = profile.serverMEDOdbServer(0) 'DELO2\AKO\KIROV\RU
-	serverMEDOdbPath = profile.serverMEDOdbPath(0) 'delo/adapter_medo27		
-	Dim serverAdapterDb As New NotesDatabase(serverMEDOdbServer, serverMEDOdbPath)	
+	'TODO uncomment when relese
+	'Call CopyFolder(ticketDir)
+	'Call DeleteFolder(MainPath & ticketDir)
 	
-	'Create entry in server MEDO adapter database
-	Dim doc As New NotesDocument(serverAdapterDb)
-	Call doc.ReplaceItemValue("Form","InKvit")
-	Call doc.ReplaceItemValue("medo_kvitGUID", ticketGUID)
-	Call doc.ReplaceItemValue("KvitAccepted", accepted)
-	Call doc.ReplaceItemValue("KvitTime", convertDateTime(Left(sendDate, 10)))
-	Call doc.ReplaceItemValue("IO_OrgName", fromOrg)
-	
-	Dim dateTime As New NotesDateTime("")
-	Call dateTime.SetNow
-	Call doc.ReplaceItemValue("ProcessDate", dateTime)
-	
-	Call doc.ReplaceItemValue("Comment", comment)		
-	Call doc.save(True,True)
-	
-	'TODO somehow connect to original database
 	
 	GoTo FINALLY
 	
@@ -341,10 +415,9 @@ End Sub
 Sub processNotifications(notificationDir As String, xmlfilename As String, reader As XmlNodeReader, archivePath As String)
 	On Error GoTo TRAP_ERROR
 	
+	'TODO uncomment code when release
+	'TODO uncomment send problem notification when release
 	'TODO reportPepared is this right (misspelled)
-	'TODO check all for relative
-	'TODO ask Max about prefix, is it always xdms?
-	'NB! Modified CopyFolder Sub -> CopyToArchive
 	
 	%REM
 		Notification types:
@@ -370,15 +443,17 @@ Sub processNotifications(notificationDir As String, xmlfilename As String, reade
 	Dim codetype As Integer
 	Dim prefix As String
 	
-	Dim uid As String
+	Dim adapterDoc_GUID As String
 	Dim notificationType As String
 	Dim notificationStatus As String
 	Dim refusedReason As String
-	Dim regNumber As String
-	Dim regDate As String
-	Dim processDate As String
-	Dim comment As String
-	
+	Dim regNumOriginal As String
+	Dim regDateOriginal As String
+	Dim comment As String	
+	'OSS = On Sender Side
+	Dim regDateOSS As String
+	Dim regNumOSS As String
+	Dim processDateOSS As String
 	
 	'Get encoding of file and read it
 	codetype = CheckCodeType(MainPath & notificationDir, xmlfilename)
@@ -390,13 +465,34 @@ Sub processNotifications(notificationDir As String, xmlfilename As String, reade
 	prefix = reader.thisNode.Lastchild.Prefix
 	If prefix = "" Then Error 1408, "Отсутствует префикс в XML файле уведомления"	
 
-	'Parse xml
+	'Get notification type (see above)
 	notificationType = getNotificationType(reader, prefix)
+	Call tmpdoc.Replaceitemvalue("notificationType", notificationType)
 	
-	'UID (Id of document in original database in GIUD format)
-	uid = reader.get(prefix + ":communication." + prefix +":notification.@" + prefix +":uid")
-	If uid = "" Then Error 1408, "Не удалось извлечь UID документа из уведомления"
-	Call tmpdoc.Replaceitemvalue("medo_notGUID", uid)
+	'UID (GUID of document in adapter database)
+	adapterDoc_GUID = reader.get(prefix + ":communication." + prefix +":notification.@" + prefix +":uid")
+	If adapterDoc_GUID = "" Then Error 1408, "Не удалось извлечь UID документа из уведомления"
+	Call tmpdoc.Replaceitemvalue("adapterDoc_GUID", adapterDoc_GUID)
+	
+	'Registration number
+	regNumOriginal = reader.get(prefix + ":communication." + prefix +":notification." + prefix + ":" + notificationType+ "." + prefix + ":foundation." + prefix + ":num." + prefix + ":number")
+	If regNumOriginal = "" Then Error 1408, "Не удалось извлечь номер регистрации документа из уведомления"
+	Call tmpdoc.Replaceitemvalue("regNumOriginal", regNumOriginal)
+	
+	'Registaration date
+	regDateOriginal = reader.get(prefix + ":communication." + prefix +":notification." + prefix + ":" + notificationType+ "." + prefix + ":foundation." + prefix + ":num." + prefix + ":date")
+	If regDateOriginal = "" Then Error 1408, "Не удалось извлечь дату регистрации документа из уведомления"
+	Call tmpdoc.Replaceitemvalue("RegDateOriginal", regDateOriginal)	
+	
+	'Status
+	notificationStatus = reader.get(prefix + ":communication." + prefix +":notification.@" + prefix +":type")
+	If notificationStatus = "" Then Error 1408, "Не удалось определить статус уведомления"
+	Call tmpdoc.Replaceitemvalue("Status", notificationStatus)	
+	
+	'Date of processing document on the sender's side
+	processDateOSS = reader.get(prefix + ":communication." + prefix +":notification." + prefix + ":" + notificationType+ "." + prefix + ":time")
+	If processDateOSS = "" Then Error 1408, "Не удалось извлечь дату создания уведомления"
+	Call tmpdoc.Replaceitemvalue("processDateOSS", convertDateTime(Left(processDateOSS, 10)))
 	
 	'Refused reason
 	If notificationType = "documentRefused" Then
@@ -405,36 +501,27 @@ Sub processNotifications(notificationDir As String, xmlfilename As String, reade
 		Call tmpdoc.Replaceitemvalue("RefusedReason", refusedReason)
 	End If
 	
-	'Status
-	notificationStatus = reader.get(prefix + ":communication." + prefix +":notification.@" + prefix +":type")
-	If notificationStatus = "" Then Error 1408, "Не удалось определить статус уведомления"
-	Call tmpdoc.Replaceitemvalue("Status", notificationStatus)	
-
-	'Registration number
-	regNumber = reader.get(prefix + ":communication." + prefix +":notification." + prefix + ":" + notificationType+ "." + prefix + ":foundation." + prefix + ":num." + prefix + ":number")
-	If regNumber = "" Then Error 1408, "Не удалось извлечь номер регистрации документа из уведомления"
-	Call tmpdoc.Replaceitemvalue("RegNumber", regNumber)
-	
-	'Registaration date
-	regDate = reader.get(prefix + ":communication." + prefix +":notification." + prefix + ":" + notificationType+ "." + prefix + ":foundation." + prefix + ":num." + prefix + ":date")
-	If regNumber = "" Then Error 1408, "Не удалось извлечь дату регистрации документа из уведомления"
-	Call tmpdoc.Replaceitemvalue("RegDate", regDate)	
-	
-	'Date of processing document on the sender's side
-	processDate = reader.get(prefix + ":communication." + prefix +":notification." + prefix + ":" + notificationType+ "." + prefix + ":time")
-	If processDate = "" Then Error 1408, "Не удалось извлечь дату создания уведомления"
-	Call tmpdoc.Replaceitemvalue("ProcessDate", convertDateTime(Left(processDate, 10)))
+	'Registation number and date on sender side
+	If notificationType = "documentAccepted" Then
+		regNumOSS = reader.get(prefix + ":communication." + prefix +":notification." + prefix + ":documentAccepted." + prefix + ":num." + prefix + ":number")
+		If regNumOSS = "" Then Error 1408, "Не удалось извлечь номер регистрации в базе отправителя из уведомления"
+		Call tmpdoc.Replaceitemvalue("regNumOSS", regNumOSS)
+		
+		regDateOSS = reader.get(prefix + ":communication." + prefix +":notification." + prefix + ":documentAccepted." + prefix + ":num." + prefix + ":date")
+		If regDateOSS = "" Then Error 1408, "Не удалось извлечь дату регистрации в базе отправителя из уведомления"
+		Call tmpdoc.Replaceitemvalue("regDateOSS", regDateOSS)
+	End If 
 	
 	'Comment	
 	comment =  reader.get(prefix + ":communication." + prefix +":notification." + prefix +":comment")
 	Call tmpdoc.Replaceitemvalue("Comment", comment) 
 
-	'TODO revise sub
-	Call createNotificationDoc(db, tmpDoc)
+
+	Call createNotificationDoc()
 	
-	'TODO test!, uncomment
-	'Call copyDir(MainPath + notificationDir, archivePath + notificationDir)
-	'Call deleteDir(MainPath & notificationDir)
+	'TODO uncomment when relese
+	'Call CopyFolder(notificationDir)
+	'Call DeleteFolder(MainPath & notificationDir)
 	Exit Sub
 	
 	GoTo FINALLY
@@ -462,47 +549,35 @@ FINALLY:
 	'Some final code here
 		
 End Sub
-Function deleteDir(pathToDir As String) As Integer
+'удаление папки и ее содержимого
+'VF 2011-12-01
+Function DeleteFolder(folder As String) As Integer
+	'Added
+	Dim FullFileName As String
 	
-	'TODO test once again, revise [.] and [..]
-
-	Dim file As String	
 	Dim filename As String
 	
-	fileName = Dir$(pathToDir & "\*.*", 0)	
-	Do While fileName <> ""
-		file = pathToDir & "\" & filename
-		Kill file
-		fileName = Dir$()
+	DeleteFolder = 0
+	'удаление файлов
+	On Error Resume Next
+	fileName$ = Dir$(folder & "\*.*", 0)
+	If Err Then
+		Print "Удаление папки - указанная папка не найдена: " & folder
+		Exit Function
+	End If
+	
+	Do While fileName$ <> ""
+		FullFileName = folder & "\" & filename
+		Kill FullFileName
+		fileName$ = Dir$()
 	Loop		
-	RmDir pathToDir  
+	On Error GoTo 0		
+	'удаление папки
+	RmDir folder  
+	DeleteFolder = 1
 End Function
 
 Function getNotificationType(reader As XmlNodeReader, prefix As String) As String
-	
-	'Dummy, but reliable(?) approach
-'	Dim node As Variant	
-'	
-'	node = reader.get(prefix + ":communication." + prefix +":notification.@" + prefix +":type")		
-'	
-'	If node = "Зарегистрирован" Then
-'		getNotificationType = "documentAccepted"
-'	ElseIf node = "Отказано в регистрации" Then
-'		getNotificationType = "documentRefused"
-'	ElseIf node = "Назначен исполнитель" Then
-'		getNotificationType = "executorAssigned"
-'	ElseIf node = "Доклад подготовлен" Then
-'		getNotificationType = "reportPepared"
-'	ElseIf node = "Доклад направлен" Then
-'		getNotificationType = "reportSent"
-'	ElseIf node = "Исполнение" Then
-'		getNotificationType = "courseChanged"
-'	ElseIf node = "Опубликование" Then
-'		getNotificationType = "documentPublished"
-'	Else
-'		Error 1408, "Не удалось определдить тип уведомления"		
-'	End If
-	
 	Dim nodesArray As Variant
 
 	nodesArray = reader.getNodes(prefix + ":communication." + prefix +":notification")
@@ -510,30 +585,5 @@ Function getNotificationType(reader As XmlNodeReader, prefix As String) As Strin
 	
 	getNotificationType = nodesArray(0).Firstchild.Nextsibling.Localname
 	If getNotificationType = "" Then Error 1408, "Не удалось определить тип уведомления"
-	
-End Function
-'из тэга без префикса выделяем префикс
-Function GetAbnormalPrefixName(XmlReader As XmlNodeReader) As String
-	Dim t_node As NotesDOMNode
-	Dim fc_t_node As NotesDOMNode
-	Dim pr As String
-	
-	pr = ""
-	
-	Set t_node = XmlReader.thisNode
-	pr = StrLeft(t_node.Nodename,":")
-	Stop
-	
-	
-	Set t_node = XmlReader.thisNode
-	Set fc_t_node = XmlReader.thisNode.Lastchild
-	Stop
-	Set fc_t_node = fc_t_node.firstchild
-	pr = StrLeft(fc_t_node.Nodename,":")
-	If pr = "" Then
-		Set fc_t_node =  fc_t_node.Nextsibling
-		pr = StrLeft(fc_t_node.Nodename,":")
-	End If
-	GetAbnormalPrefixName = pr
 	
 End Function

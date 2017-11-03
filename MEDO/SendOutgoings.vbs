@@ -13,6 +13,7 @@ Use "pdfUtil"
 Use "ITStampV3"
 Use "CoderBase64"
 Use "mUtils"
+Use "DateFormatUtils"
 
 
 Const archiveFileName = "document.edc.zip"
@@ -265,7 +266,7 @@ Function createDocumentXml22(doc As NotesDocument, tempDoc As NotesDocument, pro
 	Set dateTime = item.DateTimeValue
 	Print #fileNum%, "<?xml version=""1.0"" encoding=""windows-1251""?>"
 	Print #fileNum%, "<xdms:communication xdms:version=""2.2"" xmlns:xdms=""http://www.infpres.com/IEDMS"" xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"">"
-	Print #fileNum%, "<xdms:header xdms:type=""Документ"" xdms:uid=""" & doc.medo_docGUID(0) & """ xdms:created=""" & GetXDMSDate(dateTime) & """>"	
+	Print #fileNum%, "<xdms:header xdms:type=""Документ"" xdms:uid=""" & doc.medo_docGUID(0) & """ xdms:created=""" & formatYYYYMMDDTHHMMSS(dateTime) & """>"	
 	Print #fileNum%, "<xdms:source xdms:uid=""" & profile.Org_UID(0) & """>"
 	Print #fileNum%, "<xdms:organization>" & profile.Org_Name(0)  & "</xdms:organization>"
 	Print #fileNum%, "</xdms:source>"	
@@ -279,14 +280,14 @@ Function createDocumentXml22(doc As NotesDocument, tempDoc As NotesDocument, pro
 	Print #fileNum%, "<xdms:number>" & doc.Log_Numbers(0) & "</xdms:number>"
 	Set item = doc.GetFirstItem("Log_RgDate")
 	Set dateTime = item.DateTimeValue
-	Print #fileNum%, "<xdms:date>" & FDate(dateTime) & "</xdms:date>"
+	Print #fileNum%, "<xdms:date>" & formatYYYYMMDD(dateTime) & "</xdms:date>"
 	Print #fileNum%, "</xdms:num>"
 	
 	'документ-подписал
 	Print #fileNum%, "<xdms:signatories><xdms:signatory>"
 	Print #fileNum%, "<xdms:person>" & doc.Log_Sign(0) & "</xdms:person>"	
 	'повторяем дату
-	Print #fileNum%, "<xdms:signed>" & FDate(dateTime) & "</xdms:signed>"	
+	Print #fileNum%, "<xdms:signed>" & formatYYYYMMDD(dateTime) & "</xdms:signed>"	
 	Print #fileNum%, "</xdms:signatory></xdms:signatories>"
 	
 	'документ-кому
@@ -317,7 +318,7 @@ Function createDocumentXml22(doc As NotesDocument, tempDoc As NotesDocument, pro
 	Print #fileNum%, "<xdms:person>Не указано</xdms:person>"
 	Print #fileNum%, "<xdms:num>"
 	Print #fileNum%, "<xdms:number>" & doc.Log_Numbers(0) & "</xdms:number>"
-	Print #fileNum%, "<xdms:date>" & FDate(dateTime) & "</xdms:date>"
+	Print #fileNum%, "<xdms:date>" & formatYYYYMMDD(dateTime) & "</xdms:date>"
 	Print #fileNum%, "</xdms:num>"
 	Print #fileNum%, "</xdms:correspondent></xdms:correspondents>"
 	
@@ -339,7 +340,7 @@ Function createDocumentXml22(doc As NotesDocument, tempDoc As NotesDocument, pro
 			counter = counter + 1
 		End ForAll
 	End If	
-		
+	
 	Print #fileNum%, "</xdms:files>"
 	
 	Print #fileNum%, "</xdms:communication>"
@@ -373,7 +374,7 @@ Function createDocumentXml27(doc As NotesDocument, profile As NotesDocument, pat
 	Set dateTime = item.DateTimeValue
 	Print #fileNum%, "<?xml version=""1.0"" encoding=""windows-1251""?>"
 	Print #fileNum%, "<xdms:communication xdms:version=""2.7"" xmlns:xdms=""http://www.infpres.com/IEDMS"" xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"">"
-	Print #fileNum%, "<xdms:header xdms:type=""Транспортный контейнер"" xdms:uid=""" & doc.medo_docGUID(0) & """ xdms:created=""" & GetXDMSDate(datetime) & """>"	
+	Print #fileNum%, "<xdms:header xdms:type=""Транспортный контейнер"" xdms:uid=""" & doc.medo_docGUID(0) & """ xdms:created=""" & formatYYYYMMDDTHHMMSS(datetime) & """>"	
 	Print #fileNum%, "<xdms:source xdms:uid=""" &  profile.Org_UID(0) & """>"
 	Print #fileNum%, "<xdms:organization>" & profile.Org_Name(0)  & "</xdms:organization>"
 	Print #fileNum%, "</xdms:source>"	
@@ -476,7 +477,7 @@ Function CreatePassportXML(doc As NotesDocument, tempDoc As NotesDocument, profi
 	'Registration stamp
 	Print #fileNum%, "<c:registration>"
 	Print #fileNum%, "<c:number>"& doc.Log_Numbers(0) &"</c:number>"
-	Print #fileNum%, "<c:date>"& FDate(doc.GetFirstItem("Log_RgDate").DateTimeValue) &"</c:date>"
+	Print #fileNum%, "<c:date>"& formatYYYYMMDD(doc.GetFirstItem("Log_RgDate").DateTimeValue) &"</c:date>"
 	Print #fileNum%, "<c:registrationStamp c:localName=" + {"} + tempDoc.regStampFileName(0) + {"} + ">"
 	Print #fileNum%, "<c:position>"
 	Print #fileNum%, "<c:page>" & tempDoc.regStampPage(0) & "</c:page>"
@@ -630,74 +631,6 @@ Function CreateEnvelope (doc As NotesDocument, tempDoc As NotesDocument, pathToF
 	CreateEnvelope = True
 	
 End Function
-'Date into format DD.MM.YYYY
-Function StampDate(datetime As NotesDateTime) As String
-	Dim tmpInt As Integer
-	
-	StampDate = ""
-	
-	tmpInt = Day(datetime.DateOnly)
-	If tmpInt<10 Then StampDate = StampDate & "0"
-	StampDate = StampDate & CStr(tmpInt)&"."
-	tmpInt = Month(datetime.DateOnly)
-	If tmpInt<10 Then StampDate = StampDate & "0"
-	StampDate = StampDate & CStr(tmpInt) & "."
-	
-	StampDate = StampDate & CStr(Year(datetime.DateOnly)) 	
-	
-End Function
-'Date into format YYYY-MM-DD
-Function FDate(datetime As NotesDateTime) As String
-	Dim tmpInt As Integer
-	
-	FDate = CStr(Year(datetime.DateOnly)) & "-"
-	tmpInt = Month(datetime.DateOnly)
-	If tmpInt<10 Then FDate = FDate & "0"
-	FDate = FDate & CStr(tmpInt) & "-"
-	tmpInt = Day(datetime.DateOnly)
-	If tmpInt<10 Then FDate = FDate & "0"
-	FDate = FDate & CStr(tmpInt)
-End Function
-'Date in format YYY-MM-DDTHH:MM:SS.000
-Function GetXDMSDate(datetime As NotesDateTime) As String
-	Dim extractDir As String
-	Dim num As Integer
-	
-	GetXDMSDate = ""	
-	num = Year(datetime.DateOnly)
-	extractDir = CStr(num) & "-" 
-	num = Month(datetime.DateOnly)
-	If num<10 Then
-		extractDir = extractDir & "0" & CStr(num) & "-" 
-	Else
-		extractDir = extractDir & CStr(num) & "-" 
-	End If
-	num = Day(datetime.DateOnly)
-	If num<10 Then
-		extractDir = extractDir & "0" & CStr(num) & "T" 
-	Else
-		extractDir = extractDir & CStr(num) & "T" 
-	End If	
-	num = Hour(datetime.TimeOnly)
-	If num<10 Then
-		extractDir = extractDir & "0" & CStr(num) & ":" 
-	Else
-		extractDir = extractDir & CStr(num) & ":" 
-	End If	
-	num = Minute(datetime.TimeOnly)
-	If num<10 Then
-		extractDir = extractDir & "0" & CStr(num) & ":" 
-	Else		
-		extractDir = extractDir & CStr(num) & ":" 
-	End If	
-	num = Second(datetime.TimeOnly)
-	If num<10 Then
-		extractDir = extractDir & "0" & CStr(num) & ".000" 
-	Else		
-		extractDir = extractDir & CStr(num) & ".000" 
-	End If		
-	GetXDMSDate = extractDir
-End Function
 'VF 2013-10-03 Замена недопустимых  в XML символов
 Function ReplaceXMLSymbols(source As String) As String
 	Dim workStr As String
@@ -812,7 +745,7 @@ Function createStampImages(doc As NotesDocument, tempDoc As NotesDocument, profi
 	Set reg_date_item = doc.GetFirstItem("Log_RgDate")
 	Set reg_date = reg_date_item.DateTimeValue
 	
-	reg_str(0) = stampDate(reg_date) + "               " + doc.Log_Numbers(0)  
+	reg_str(0) = formatDDMMYYYY(reg_date) + "               " + doc.Log_Numbers(0)  
 	
 	Call tempDoc.Replaceitemvalue("regStampWidth", CStr(regStampWidth))
 	Call tempDoc.Replaceitemvalue("regStampHeight", CStr(regStampHeight))
@@ -839,35 +772,35 @@ Function createStampImages(doc As NotesDocument, tempDoc As NotesDocument, profi
 	Dim signatureCertificate As String
 
 	'TODO revise IsFileBase64 part
- 	 If IsFileBase64(pathP7s) Then
- 	 	Dim p7s_ef As String
- 	 	p7s_ef = pathP7s
- 	 	p7s_ef = StrLeftBack(p7s_ef, ".")
- 	 	p7s_ef = p7s_ef + "_enc" + ".p7s"
- 	 	If DecodeFile(pathP7s, dirTmp & extractDir & "p7s_ef_enc.p7s") Then
- 	 		signature = getAllsignInfoFromFile(dirTmp & extractDir & p7s_ef)
- 	 	End If
- 	 Else
- 	 	signature = getAllsignInfoFromFile(pathP7s)	
- 	 End If
+	If IsFileBase64(pathP7s) Then
+		Dim p7s_ef As String
+		p7s_ef = pathP7s
+		p7s_ef = StrLeftBack(p7s_ef, ".")
+		p7s_ef = p7s_ef + "_enc" + ".p7s"
+		If DecodeFile(pathP7s, dirTmp & extractDir & "p7s_ef_enc.p7s") Then
+			signature = getAllsignInfoFromFile(dirTmp & extractDir & p7s_ef)
+		End If
+	Else
+		signature = getAllsignInfoFromFile(pathP7s)	
+	End If
 
- 	 signatureParsed = Split(signature, " - ")
- 	 signatureParsed = FullTrim(signatureParsed)
+	signatureParsed = Split(signature, " - ")
+	signatureParsed = FullTrim(signatureParsed)
 
- 	 signatureOwner = signatureParsed(0)
- 	 signatureCertificate = signatureParsed(1)
- 	 signatureValidFrom = signatureParsed(2)
- 	 signatureValidTo = signatureParsed(3)
- 
- 	 Dim sign_prop(0 To 2) As String
- 	 sign_prop(0) = "Сертификат:|" + signatureCertificate
-	 sign_prop(1) = "Владелец:|<b>" + signatureOwner
- 	 sign_prop(2) = "Действителен:|с  " + signatureValidFrom + "  по  " + signatureValidTo
+	signatureOwner = signatureParsed(0)
+	signatureCertificate = signatureParsed(1)
+	signatureValidFrom = signatureParsed(2)
+	signatureValidTo = signatureParsed(3)
+	
+	Dim sign_prop(0 To 2) As String
+	sign_prop(0) = "Сертификат:|" + signatureCertificate
+	sign_prop(1) = "Владелец:|<b>" + signatureOwner
+	sign_prop(2) = "Действителен:|с  " + signatureValidFrom + "  по  " + signatureValidTo
 
-'	Dim sign_prop(0 To 2) As String
-'	sign_prop(0) = "Сертификат:|" + "Сертификат № 1408"
-'	sign_prop(1) = "Владелец:|<b>" + "Фамилия Имя Отчество"
-'	sign_prop(2) = "Действителен:|с  " + "01.01.0001" + "  по  " + "01.01.0002"
+	'	Dim sign_prop(0 To 2) As String
+	'	sign_prop(0) = "Сертификат:|" + "Сертификат № 1408"
+	'	sign_prop(1) = "Владелец:|<b>" + "Фамилия Имя Отчество"
+	'	sign_prop(2) = "Действителен:|с  " + "01.01.0001" + "  по  " + "01.01.0002"
 
 
 	Call tempDoc.Replaceitemvalue("signatureStampWidth", CStr(signatureStampWidth))
@@ -891,10 +824,10 @@ Function createStampImages(doc As NotesDocument, tempDoc As NotesDocument, profi
 	Call drawStampFNS(FullTrim(sign_prop), signatureStampWidth, signatureStampHeight, signatureFontSize, True, False, dirTmp & extractDir & signatureStampFileName)
 	Call tempDoc.Replaceitemvalue("file_paths", ArrayAppend(tempDoc.file_paths, dirTmp & extractDir & signatureStampFileName))
 
-'	If Not addStampImagesToPfd(dirTmp & extractDir, tempDoc, doc) Then
-'		Error 1408, "Ошибка при создании файла визуализации"
-'	End If
+	'	If Not addStampImagesToPfd(dirTmp & extractDir, tempDoc, doc) Then
+	'		Error 1408, "Ошибка при создании файла визуализации"
+	'	End If
 
 	createStampImages = True
-		
+	
 End Function
