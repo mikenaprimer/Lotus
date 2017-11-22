@@ -1,8 +1,6 @@
 %REM
-	Agent Отправка исходящих 2.7
 	Requirements:
-		- Only ONE main document in pdf
-		- Only ONE eSignature in p7s
+		- Only ONE eSignature with each attachment
 		- Debenu
 		- CryptoPro Java Module v. 2.0.39014
 %END REM
@@ -16,7 +14,12 @@ Use "mUtils"
 Use "DateFormatUtils"
 
 
+
+
 Const archiveFileName = "document.edc.zip"
+Const mainDocNameBase = "mainDoc"
+Const mainDocSignatureNameBase = "mainDoc_signature_"
+Const attachmentNameBase = "attachment_"
 Sub Initialize	
 	On Error GoTo TRAP_ERROR
 
@@ -25,18 +28,23 @@ Sub Initialize
 	Dim view As NotesView
 	Dim doc As NotesDocument
 	Dim profile As NotesDocument
+	Dim currDateTime As New NotesDateTime("")
 	
-	Dim dirTmp As String
-	Dim dirOut As String
-	Dim archiveOutDir As String
+	Dim serverMEDOdbServer As String
+	Dim serverMEDOdbPath As String
+	Dim serverDb As NotesDatabase
+	
+	Dim tempDir As String
+	Dim outDir As String
+	Dim archiveDir As String
 	
 	Dim rtitem As Variant	
 	Dim file_index As Integer
 	Dim extractFileName As String
 	Dim extractDir As String
 	
-	Dim dateTime As New NotesDateTime( "" )
-	Call dateTime.SetNow 
+	
+	Call currDateTime.SetNow 
 
 	Randomize
 
@@ -44,19 +52,20 @@ Sub Initialize
 
 	'Get preferences
 	Set profile = db.GetProfileDocument("IO_Setup")	
-	dirOut = profile.Folder_Out(0) 					'~/MEDO/OUT/
-	dirTmp = profile.Folder_Temp(0) 				'~/MEDO/TMP/
-	archiveOutDir = profile.Folder_Archive_Out(0)	'~/MEDO/ARCHIVE/OUT
-	
-	If Right(dirOut, 1)<>"\" Then dirOut = dirOut & "\"
-	If Right(dirTmp, 1)<>"\" Then dirTmp = dirTmp & "\"
+	outDir = profile.Folder_Out(0) 					'~/MEDO/OUT/
+	tempDir = profile.Folder_Temp(0) 				'C:/MEDO/TMP/
+	archiveDir = profile.Folder_Archive_Out(0)		'~/MEDO/ARCHIVE/OUT
+	If tempDir = "" Or outDir = "" Or archiveDir = "" Then
+		Error 1408, "Из профайла базы не удалось получить необходимую информацию о каталогах выгрузки"
+	End If
+	If Right(outDir, 1)<>"\" Then outDir = outDir & "\"
+	If Right(tempDir, 1)<>"\" Then tempDir = tempDir & "\"
+	If Right(archiveDir, 1)<>"\" Then archiveDir = archiveDir & "\"
 
-	'Open MEDO database (DELO2/delo/adapter_medo27.nsf)
-	Dim serverMEDOdbServer As String
-	Dim serverMEDOdbPath As String
-	serverMEDOdbServer = profile.serverMEDOdbServer(0) 'DELO2\AKO\KIROV\RU
-	serverMEDOdbPath = profile.serverMEDOdbPath(0) 'delo/adapter_medo27		
-	Dim serverDb As New NotesDatabase(serverMEDOdbServer, serverMEDOdbPath)		
+	'Open MEDO database (DELO2/delo/adapter_medo27.nsf)	
+	serverMEDOdbServer = profile.serverMEDOdbServer(0) 	'DELO2\AKO\KIROV\RU
+	serverMEDOdbPath = profile.serverMEDOdbPath(0) 		'delo/adapter_medo27		
+	Set serverDb = New NotesDatabase(serverMEDOdbServer, serverMEDOdbPath)		
 	
 	'Loop through all documents in view
 	Set view = serverDb.GetView("OutNew")
@@ -64,147 +73,75 @@ Sub Initialize
 	While Not(doc Is Nothing)
 
 		Dim tempDoc As New NotesDocument(db)
-		file_index = 1
-
-		If doc.dsp(0)="1" Then
-			Error 1408, "ДСП документ"
-		End If
 
 		'Create unique folder in TMP
-		extractDir = dateTime.DateOnly & Replace(dateTime.Localtime,":","_") & "_" & doc.UniversalID & "_" & CStr(Round(Rnd()*1000,0)) & "\"
-		MkDir dirTmp & extractDir 
+		extractDir = currDateTime.DateOnly & Replace(currDateTime.Localtime,":","_") & "_" & doc.UniversalID & "_" & CStr(Round(Rnd()*1000,0)) & "\"
+		MkDir tempDir & extractDir 
 		Call tempDoc.ReplaceItemValue("extractDir", extractDir)
 
 		'Extract main attachments from "Body" to temp folder
-		If doc.HasItem("Body") Then
-
-			Set rtitem = doc.GetFirstItem("Body")
-
-			If (rtitem.Type = RICHTEXT) Then
-				If Not IsEmpty(rtitem.EmbeddedObjects) Then	
-
-					ForAll o In rtitem.EmbeddedObjects
-						If (o.Type = EMBED_ATTACHMENT) Then
-
-							If file_index < 10 Then
-								extractFileName = "mainDoc00" + CStr(file_index) 	
-							ElseIf	file_index < 100 Then
-								extractFileName = "mainDoc0" + CStr(file_index)
-							Else
-								extractFileName = "mainDoc" + CStr(file_index)
-							End If
-							extractFileName = extractFileName + "." + StrRightBack(o.Source, ".")
-
-							Call o.ExtractFile(dirTmp & extractDir & extractFileName)
-							
-							If doc.Getitemvalue("medo_version")(0) = "2.7" Then
-								If LCase(StrRightBack(extractFileName,".")) = "pdf" Then
-									Call tempDoc.Replaceitemvalue("pdf_path", dirTmp & extractDir & extractFileName)
-									Call tempDoc.Replaceitemvalue("pdf_file", extractFileName)
-								ElseIf LCase(StrRightBack(extractFileName,".")) = "p7s" Then
-									Call tempDoc.Replaceitemvalue("p7s_path", dirTmp & extractDir & extractFileName)
-									Call tempDoc.Replaceitemvalue("p7s_file", extractFileName)					
-								End If
-							End If
-							
-							'Write file name in mainDocs field
-							If tempDoc.mainDocs(0)="" Then
-								Call tempDoc.Replaceitemvalue("mainDocs", extractFileName)						
-							Else
-								Call tempDoc.Replaceitemvalue("mainDocs", ArrayAppend(tempDoc.mainDocs, extractFileName))
-							End If
-							
-							'NB! I need this, do not delete
-							'Write file path in file_paths field
-							If tempDoc.file_paths(0)="" Then
-								Call tempDoc.Replaceitemvalue("file_paths", dirTmp & extractDir & extractFileName)						
-							Else
-								Call tempDoc.Replaceitemvalue("file_paths", ArrayAppend(tempDoc.file_paths, dirTmp & extractDir & extractFileName))
-							End If				
-
-							file_index = file_index + 1
-		
-						End If						
-					End ForAll				
-				End If				
-			End If
-		End If 
-
-		If doc.medo_version(0) = "2.7" Then
-			If tempDoc.pdf_path(0) = "" Or tempDoc.p7s_path(0) = "" Then
-				Error 1408, "Нет pdf или p7s файла"		
-			End If
-		End If		
+		Call extractMainAttachments(doc, tempDoc, profile)					
 
 		'Extract sub attachments from "BodyAppendix" to temp folder
 		Call extractAppendixAttachments(doc, tempDoc, profile)
 	
 		Call doc.ReplaceItemValue("medo_docGUID", generateGUID)
-		Call doc.ReplaceItemValue("OutCard_Date", dateTime)
+		Call doc.ReplaceItemValue("OutCard_Date", currDateTime)
 
 		'Create document.xml
 		If doc.Getitemvalue("medo_version")(0) = "2.7" Then
-			If Not createDocumentXml27(doc, profile, dirTmp & extractDir & "document.xml") Then
+			If Not createDocumentXml27(doc, profile, tempDir & extractDir & "document.xml") Then
 				Error 1408, "Не удалось создать файл паспорта сообщения МЭДО (document.xml)"			
 			End If
 		Else
-			If Not createDocumentXml22(doc, tempDoc, profile, dirTmp & extractDir & "document.xml") Then
+			If Not createDocumentXml22(doc, tempDoc, profile, tempDir & extractDir & "document.xml") Then
 				Error 1408, "Не удалось создать файл паспорта сообщения МЭДО (document.xml)"			
 			End If
 		End If
 		
-			
-		
-		If doc.Getitemvalue("medo_version")(0) = "2.7" Then
-			'TODO Some problems remained here, but they are not essential, some error handling and so on
-			'Create pdf with signature
-			If Not createStampImages(doc, tempDoc, profile) Then
-				Error 1408, "Не удалось создать пдф с подписью"
-			End If
-			
-			'Create passport.xml
-			'TODO some small issues, comments
-			If Not CreatePassportXML(doc, tempDoc, profile, dirTmp & extractDir & "passport.xml") Then
-				Error 1408, "Не удалось создать файл passport.xml"
-			End If
+		If doc.Getitemvalue("medo_version")(0) = "2.7" Then			
+			Call createRegStampImage(doc, tempDoc, tempDir)			
+			Call createSignatureStampImage(tempDoc, profile, doc.InRS_Pages(0))			
+			Call createPassportXML(doc, tempDoc, profile, tempDir & extractDir & "passport.xml")
 		End If		
 
 		'Create envelope.ini
-		If Not CreateEnvelope(doc, tempDoc, dirTmp & extractDir & "envelope.ini") Then
+		If Not CreateEnvelope(doc, tempDoc, tempDir & extractDir & "envelope.ini") Then
 			Error 1408, "Не удалось создать файл envelope.ini"
 		End If	
 		
 		'Pack files
-		MkDir dirOut & extractDir
-		MkDir archiveOutDir & extractDir
-		
-		FileCopy dirTmp & extractDir & "document.xml", dirOut & extractDir & "document.xml" 
-		FileCopy dirTmp & extractDir & "document.xml", archiveOutDir & extractDir & "document.xml" 
-		FileCopy dirTmp & extractDir & "envelope.ini", dirOut & extractDir & "envelope.ini"
-		FileCopy dirTmp & extractDir & "envelope.ini", archiveOutDir & extractDir & "envelope.ini"
-			
-		
+		MkDir outDir & extractDir
+		MkDir archiveDir & extractDir
+		Stop
 		If doc.Getitemvalue("medo_version")(0) = "2.7" Then
-			If packZip(dirTmp & extractDir & archiveFileName, tempDoc.Getitemvalue("file_paths")) Then
-				FileCopy dirTmp & extractDir & archiveFileName, dirOut & extractDir & archiveFileName		
-				FileCopy dirTmp & extractDir & archiveFileName, archiveOutDir & extractDir & archiveFileName			
+			If packZip(tempDir & extractDir & archiveFileName, tempDoc.Getitemvalue("pathsToZip")) Then
+				FileCopy tempDir & extractDir & archiveFileName, outDir & extractDir & archiveFileName		
+				FileCopy tempDir & extractDir & archiveFileName, archiveDir & extractDir & archiveFileName
+			Else
+				Error 1408, "Не удалось сформировать zip архив"
 			End If
 		Else
 			ForAll mainDoc In tempDoc.mainDocs
-				FileCopy dirTmp & extractDir & mainDoc, dirOut & extractDir & mainDoc
-				FileCopy dirTmp & extractDir & mainDoc, archiveOutDir & extractDir & mainDoc	
+				FileCopy tempDir & extractDir & mainDoc, outDir & extractDir & mainDoc
+				FileCopy tempDir & extractDir & mainDoc, archiveDir & extractDir & mainDoc	
 			End ForAll
 			If tempDoc.Hasitem("appendixes") Then
 				ForAll appendix In tempDoc.appendixes
-					FileCopy dirTmp & extractDir & appendix, dirOut & extractDir & appendix	
-					FileCopy dirTmp & extractDir & appendix, archiveOutDir & extractDir & appendix	
+					FileCopy tempDir & extractDir & appendix, outDir & extractDir & appendix	
+					FileCopy tempDir & extractDir & appendix, archiveDir & extractDir & appendix	
 				End ForAll
 			End If						
 		End If
+		
+		FileCopy tempDir & extractDir & "document.xml", outDir & extractDir & "document.xml" 
+		FileCopy tempDir & extractDir & "document.xml", archiveDir & extractDir & "document.xml" 
+		FileCopy tempDir & extractDir & "envelope.ini", outDir & extractDir & "envelope.ini"
+		FileCopy tempDir & extractDir & "envelope.ini", archiveDir & extractDir & "envelope.ini"
 			
 		
 		'Add fields to display document in "Send" view
-		Call doc.ReplaceItemValue("OutCard_Folder", dirOut & extractDir)
+		Call doc.ReplaceItemValue("OutCard_Folder", outDir & extractDir)
 		Call doc.ReplaceItemValue("Form", "Out")
 
 		GoTo NEXT_DOC
@@ -232,11 +169,11 @@ TRAP_ERROR:
 
 NEXT_DOC:
 
-		If doc.ProcessedError(0) = "1" Then
-			Print "Document with id " & doc.MEDO_UNID(0) & " done with error"
-		Else
-			Print "Document with id " & doc.MEDO_UNID(0) & " done successfully"
-		End If
+	If doc.ProcessedError(0) = "1" Then
+		Print "Document with id " & doc.MEDO_UNID(0) & " done with error"
+	Else
+		Print "Document with id " & doc.MEDO_UNID(0) & " done successfully"
+	End If
 
 	Call doc.Save(True, True)
 		
@@ -247,6 +184,11 @@ NEXT_DOC:
 	If Not tempDoc Is Nothing Then Call tempDoc.Remove(True)
 	
 End Sub
+Sub Terminate
+	
+End Sub
+
+
 
 
 
@@ -396,17 +338,19 @@ End Function
 	Function extractAppendixAttachments
 	Description: 
 		Extract all files from BodyAppendix to temp directory 
-		Write paths to this files in tempDoc fields "appendixes" and "file_paths"
+		Write paths to this files in tempDoc fields "appendixes" and "pathsToZip"
 %END REM
 Function extractAppendixAttachments(doc As NotesDocument, tempDoc As NotesDocument, profile As NotesDocument)	
 	Dim rtitem As Variant
 	Dim extractFileName As String
-	Dim dirTmp As String
+	Dim tempDir As String
 	Dim extractDir As String
 	Dim counter As Integer
+	Dim extention As String
+	Dim res As Integer
 	
 	counter = 1
-	dirTmp = profile.Folder_Temp(0)
+	tempDir = profile.Folder_Temp(0)
 	extractDir = tempDoc.extractDir(0)	
 	
 	If doc.HasItem("BodyAppendix") Then		
@@ -415,28 +359,91 @@ Function extractAppendixAttachments(doc As NotesDocument, tempDoc As NotesDocume
 			If Not IsEmpty(rtitem.EmbeddedObjects) Then 
 				ForAll o In rtitem.EmbeddedObjects
 					If (o.Type = EMBED_ATTACHMENT) Then
+						
+						extention = StrRightBack(o.Source, ".")
+						
+						If Not extention = "p7s" Then
+							extractFileName = attachmentNameBase + getFileSequenceNumber(counter) + "." + extention
+							Call o.ExtractFile(tempDir & extractDir & extractFileName)
+							
+							If tempDoc.appendixes(0)="" Then
+								Call tempDoc.Replaceitemvalue("appendixes", extractFileName)						
+							Else
+								Call tempDoc.Replaceitemvalue("appendixes", ArrayAppend(tempDoc.appendixes, extractFileName))
+							End If
+							
+							'This is only for MEDO version 2.7
+							If tempDoc.pathsToZip(0)="" Then
+								Call tempDoc.Replaceitemvalue("pathsToZip", tempDir & extractDir & extractFileName)						
+							Else
+								Call tempDoc.Replaceitemvalue("pathsToZip", ArrayAppend(tempDoc.pathsToZip, tempDir & extractDir & extractFileName))
+							End If
+							
+							ForAll oo In rtitem.EmbeddedObjects								
+								If (oo.Type = EMBED_ATTACHMENT) Then	
+									extention = StrRightBack(oo.Source, ".")
+									If extention = "p7s" Then										
+										If StrCompare(StrLeftBack(o.Source, "."), StrLeftBack(oo.Source, ".")) = 0 Then	
+											extractFileName = attachmentNameBase + getFileSequenceNumber(counter) + "_signature" + "." + extention
+											Call o.ExtractFile(tempDir & extractDir & extractFileName)
+											
+											If tempDoc.appendixes(0)="" Then
+												Call tempDoc.Replaceitemvalue("appendixes", extractFileName)						
+											Else
+												Call tempDoc.Replaceitemvalue("appendixes", ArrayAppend(tempDoc.appendixes, extractFileName))
+											End If
+											
+											'This is only for MEDO version 2.7
+											If tempDoc.pathsToZip(0)="" Then
+												Call tempDoc.Replaceitemvalue("pathsToZip", tempDir & extractDir & extractFileName)						
+											Else
+												Call tempDoc.Replaceitemvalue("pathsToZip", ArrayAppend(tempDoc.pathsToZip, tempDir & extractDir & extractFileName))
+											End If											
+										End If	
+									End If
+																
+								End If								
+							End ForAll
+							
+							counter = counter + 1
+							
+						End If 	
+						
 
-						If counter < 10 Then
-							extractFileName = "attachment00" + CStr(counter) 	
-						ElseIf	counter < 100 Then
-							extractFileName = "attachment0" + CStr(counter)
-						Else
-							extractFileName = "attachment" + CStr(counter)
-						End If
-						extractFileName = extractFileName + "." +  StrRightBack(o.Source,".")
+						
+						
+					End If						
+				End ForAll
+			End If 
+		End If 
+	End If
+	
+%REM	
+	If doc.HasItem("BodyAppendix") Then		
+		Set rtitem = doc.GetFirstItem("BodyAppendix")
+		If (rtitem.Type = RICHTEXT) Then 
+			If Not IsEmpty(rtitem.EmbeddedObjects) Then 
+				ForAll o In rtitem.EmbeddedObjects
+					If (o.Type = EMBED_ATTACHMENT) Then
+						
+						Stop
+						
+						extractFileName = "attachment" + getFileSequenceNumber(counter) + "." + StrRightBack(o.Source, ".")
 
-						Call o.ExtractFile(dirTmp & extractDir & extractFileName)
+						Call o.ExtractFile(tempDir & extractDir & extractFileName)
 
 						If tempDoc.appendixes(0)="" Then
 							Call tempDoc.Replaceitemvalue("appendixes", extractFileName)						
 						Else
 							Call tempDoc.Replaceitemvalue("appendixes", ArrayAppend(tempDoc.appendixes, extractFileName))
 						End If
-
-						If tempDoc.file_paths(0)="" Then
-							Call tempDoc.Replaceitemvalue("file_paths", dirTmp & extractDir & extractFileName)						
-						Else
-							Call tempDoc.Replaceitemvalue("file_paths", ArrayAppend(tempDoc.file_paths, dirTmp & extractDir & extractFileName))
+						
+						If doc.Getitemvalue("medo_version")(0) = "2.7" Then							
+							If tempDoc.pathsToZip(0)="" Then
+								Call tempDoc.Replaceitemvalue("pathsToZip", tempDir & extractDir & extractFileName)						
+							Else
+								Call tempDoc.Replaceitemvalue("pathsToZip", ArrayAppend(tempDoc.pathsToZip, tempDir & extractDir & extractFileName))
+							End If								
 						End If
 
 						counter = counter + 1
@@ -446,14 +453,15 @@ Function extractAppendixAttachments(doc As NotesDocument, tempDoc As NotesDocume
 			End If 
 		End If 
 	End If
+%END REM
 		
 End Function
-Function CreatePassportXML(doc As NotesDocument, tempDoc As NotesDocument, profile As NotesDocument, filename As String) As Boolean
+Sub createPassportXML(doc As NotesDocument, tempDoc As NotesDocument, profile As NotesDocument, filename As String)
+	
 	Dim fileNum As Integer
 	Dim dateTime As NotesDateTime
-	Dim item As NotesItem
+	Dim item As NotesItem	
 	
-	CreatePassportXML = False
 	fileNum% = FreeFile()	
 	Open fileName$ For Output As fileNum%
 	
@@ -467,9 +475,9 @@ Function CreatePassportXML(doc As NotesDocument, tempDoc As NotesDocument, profi
 	Print #fileNum%, "<c:annotation>" & ReplaceXMLSymbols(doc.Subject(0)) & "</c:annotation>"
 	Print #fileNum%, "</c:requisites>"
 	
+	'TODO ForAll signatures
 	'Authors 
 	Print #fileNum%, "<c:authors>"
-	'Author (may be several)
 	Print #fileNum%, "<c:author>"
 	Print #fileNum%, "<c:organization>"
 	Print #fileNum%, "<c:title>" & profile.Org_Name(0) & "</c:title>"
@@ -478,7 +486,7 @@ Function CreatePassportXML(doc As NotesDocument, tempDoc As NotesDocument, profi
 	Print #fileNum%, "<c:registration>"
 	Print #fileNum%, "<c:number>"& doc.Log_Numbers(0) &"</c:number>"
 	Print #fileNum%, "<c:date>"& formatYYYYMMDD(doc.GetFirstItem("Log_RgDate").DateTimeValue) &"</c:date>"
-	Print #fileNum%, "<c:registrationStamp c:localName=" + {"} + tempDoc.regStampFileName(0) + {"} + ">"
+	Print #fileNum%, |<c:registrationStamp c:localName="| + tempDoc.regStampFileName(0) |">|
 	Print #fileNum%, "<c:position>"
 	Print #fileNum%, "<c:page>" & tempDoc.regStampPage(0) & "</c:page>"
 	Print #fileNum%, "<c:topLeft>"
@@ -492,15 +500,11 @@ Function CreatePassportXML(doc As NotesDocument, tempDoc As NotesDocument, profi
 	Print #fileNum%, "</c:position>"
 	Print #fileNum%, "</c:registrationStamp>"
 	Print #fileNum%, "</c:registration>"
-	
 	'Signature stamp
 	Print #fileNum%, "<c:sign>"
 	Print #fileNum%, "<c:person>"
-	'TODO add post, phone, email (revise, is person data neccessary element
-	Print #fileNum%, "<c:post>---</c:post>"
+	Print #fileNum%, "<c:post>Не указано</c:post>"
 	Print #fileNum%, "<c:name>" & doc.Log_Sign(0) & "</c:name>"
-	'Print #fileNum%, "<c:phone>"& doc.Log_Sign(0) & "</c:phone>"
-	'Print #fileNum%, "<c:email>"& doc.Log_Sign(0) & "</c:email>"
 	Print #fileNum%, "</c:person>"
 	Print #fileNum%, "<c:documentSignature c:localName="+ {"} + tempDoc.p7s_file(0) + {"} + " c:type=""Утверждающая"">"
 	Print #fileNum%, "<c:signatureStamp c:localName="+ {"} + tempDoc.signatureStampFileName(0) + {"}+ ">"
@@ -537,47 +541,47 @@ Function CreatePassportXML(doc As NotesDocument, tempDoc As NotesDocument, profi
 		Print #fileNum%, "<c:organization>"
 		Print #fileNum%, "<c:title>" & ReplaceXMLSymbols(addressee) & "</c:title>"
 		Print #fileNum%, "</c:organization>"
-		'Optional
-		'Print #fileNum%, "<c:person>"
-		'Print #fileNum%, "<c:post>Не указано</c:post>"
-		'Print #fileNum%, "<c:name>Не указано</c:name>"
-		'Print #fileNum%, "</c:person>" 
 		Print #fileNum%, "</c:addressee>"
 	End ForAll
 	Print #fileNum%, "</c:addressees>"
 	
-	'Main documents
-	ForAll mainDoc In tempDoc.mainDocs
-		If LCase(StrRightBack(mainDoc, ".")) = "pdf" Then
-			mainDoc = {"} + mainDoc + {"}
-			Print #fileNum%, "<c:document c:localName=" & mainDoc & ">"
-			Print #fileNum%, "<c:pagesQuantity>" & CStr(doc.InRS_Pages(0)) & "</c:pagesQuantity>"
-			Print #fileNum%, "</c:document>"	
-		End If
-	End ForAll
+	'Main document
+	Print #fileNum%, |<c:document c:localName="| & tempDoc.mainDocFileName(0) & |">|
+	Print #fileNum%, "<c:pagesQuantity>" & CStr(doc.InRS_Pages(0)) & "</c:pagesQuantity>"
+	Print #fileNum%, "</c:document>"
 	
 	'Attachments
 	If tempDoc.Getitemvalue("appendixes")(0) <> "" Then
 		Dim order As Integer
 		order = 0
-		Print #fileNum%, "<c:attachments>"
-		ForAll attach In tempDoc.appendixes
-			Print #fileNum%, "<c:attachment c:localName=" + {"} + attach + {"} + ">"
-			Print #fileNum%, "<c:order>"& CStr(order) &"</c:order>"
-			Print #fileNum%, "</c:attachment>"
-			order = order + 1
+		Print #fileNum%, |<c:attachments>|
+		ForAll a In tempDoc.appendixes			
+			If Not StrRightBack(a, ".") = "p7s" Then
+				Print #fileNum%, |<c:attachment c:localName="| + a + |">|
+				Print #fileNum%, |<c:order>| & CStr(order) & |</c:order>|
+				Print #fileNum%, |<c:description>| & |Нет информации| & |</c:description>|
+				ForAll aa In tempDoc.appendixes
+					If StrRightBack(aa, ".") = "p7s" Then										
+						If StrCompare(StrLeftBack(a, "."), StrLeftBack(StrLeftBack(aa, "."), "_")) = 0 Then	
+							Print #fileNum%, |<c:signature c:localName="| + aa + |"/>|							
+						End If
+					End If
+				End ForAll
+				
+				Print #fileNum%, |</c:attachment>|
+				order = order + 1
+			End If	
 		End ForAll
-		Print #fileNum%, "</c:attachments>"
+		Print #fileNum%, |</c:attachments>|
 	End If
 	
-	Print #fileNum%, "</c:container>"
+	Print #fileNum%, |</c:container>|
 	
 	Close fileNum%	
 	
-	Call tempDoc.Replaceitemvalue("file_paths", ArrayAppend(tempDoc.file_paths, filename))
+	Call tempDoc.Replaceitemvalue("pathsToZip", ArrayAppend(tempDoc.pathsToZip, filename))
 	
-	CreatePassportXML = True
-End Function
+End Sub
 Function CreateEnvelope (doc As NotesDocument, tempDoc As NotesDocument, pathToFile As String) As Boolean
 	
 	CreateEnvelope = False
@@ -631,6 +635,218 @@ Function CreateEnvelope (doc As NotesDocument, tempDoc As NotesDocument, pathToF
 	CreateEnvelope = True
 	
 End Function
+Sub createRegStampImage(doc As NotesDocument, tempDoc As NotesDocument, tempDir As String)
+	Dim extractDir As String	
+	Dim imagePath As String
+	
+	Const regStampFileName = "reg_stamp.png"
+	Const regStampWidth = 100
+	Const regStampHeight = 14
+	Const regStampFontSize = 12
+	
+	extractDir = tempDoc.extractDir(0)
+	
+	Dim reg_str(0 To 0) As String
+
+	'Date	
+	Dim reg_date As NotesDateTime
+	Dim reg_date_item As NotesItem
+	Set reg_date_item = doc.GetFirstItem("Log_RgDate")
+	Set reg_date = reg_date_item.DateTimeValue
+	
+	reg_str(0) = formatDDMMYYYY(reg_date) + "               " + doc.Log_Numbers(0)  
+	imagePath = tempDir & extractDir & regStampFileName
+	
+	Call tempDoc.Replaceitemvalue("regStampWidth", CStr(regStampWidth))
+	Call tempDoc.Replaceitemvalue("regStampHeight", CStr(regStampHeight))
+	Call tempDoc.Replaceitemvalue("regStampFileName",  regStampFileName)
+	Call tempDoc.Replaceitemvalue("regStampPage", "1")
+	Call tempDoc.Replaceitemvalue("regStampX", "7")
+	Call tempDoc.Replaceitemvalue("regStampY", "55")
+	
+	Call drawSimpleStamp(reg_str, regStampWidth, regStampHeight, regStampFontSize, ALIGN_CENTER_, ALIGN_Middle_, imagePath)
+	Call tempDoc.Replaceitemvalue("pathsToZip", ArrayAppend(tempDoc.pathsToZip, imagePath))
+	
+End Sub
+Sub createSignatureStampImage(tempDoc As NotesDocument, profile As NotesDocument, stampPage As Integer)
+	
+	Dim tempDir As String
+	Dim extractDir As String	
+	Dim stampPlacement As String
+	Dim imagePath As String
+	Dim p7sName As String
+	Dim signatureStampFileName As String
+	Dim counter As Integer
+	
+	Dim signature As String
+	Dim signatureParsed As Variant
+	Dim signatureOwner As String
+	Dim signatureValidFrom As String
+	Dim signatureValidTo As String
+	Dim signatureCertificate As String
+	
+	Const extention = ".png"	
+	Const signatureStampBaseName = "signature_stamp"
+	Const signatureStampWidth = 72
+	Const signatureStampHeight = 30
+	Const signatureFontSize = 6	
+	
+	counter = 1
+	
+	ForAll p7sPath In tempDoc.p7s_path
+		
+		signatureStampFileName = signatureStampBaseName + "_" + getFileSequenceNumber(counter) + extention	
+		
+		tempDir = profile.Folder_Temp(0)
+		If Right(tempDir, 1)<>"\" Then tempDir = tempDir & "\"
+		extractDir = tempDoc.extractDir(0)
+		stampPlacement = profile.StampPlacement(0)	
+
+		'TODO revise IsFileBase64 part
+		If IsFileBase64(p7sPath) Then
+			Dim p7s_ef As String
+			p7s_ef = p7sPath
+			p7s_ef = StrLeftBack(p7s_ef, ".")
+			p7s_ef = p7s_ef + "_enc" + ".p7s"
+			If DecodeFile(p7sPath, tempDir & extractDir & "p7s_ef_enc.p7s") Then
+				signature = getAllsignInfoFromFile(tempDir & extractDir & p7s_ef)
+			End If
+		Else
+			signature = getAllsignInfoFromFile(p7sPath)	
+		End If
+
+		signatureParsed = FullTrim(Split(signature, " - "))
+
+		signatureOwner = signatureParsed(0)
+		signatureCertificate = signatureParsed(1)
+		signatureValidFrom = signatureParsed(2)
+		signatureValidTo = signatureParsed(3)
+		
+		Dim sign_prop(0 To 2) As String
+		sign_prop(0) = "Сертификат:|" + signatureCertificate
+		sign_prop(1) = "Владелец:|<b>" + signatureOwner
+		sign_prop(2) = "Действителен:|с  " + signatureValidFrom + "  по  " + signatureValidTo
+
+		'	Dim sign_prop(0 To 2) As String
+		'	sign_prop(0) = "Сертификат:|" + "Сертификат № 1408"
+		'	sign_prop(1) = "Владелец:|<b>" + "Фамилия Имя Отчество"
+		'	sign_prop(2) = "Действителен:|с  " + "01.01.0001" + "  по  " + "01.01.0002"
+
+		Call tempDoc.Replaceitemvalue("signatureStampWidth", CStr(signatureStampWidth))
+		Call tempDoc.Replaceitemvalue("signatureStampHeight", CStr(signatureStampHeight)) 
+		Call tempDoc.Replaceitemvalue("signatureStampPage", CStr(stampPage))		
+		If tempDoc.signatureStampFileName(0)="" Then
+			Call tempDoc.Replaceitemvalue("signatureStampFileName", signatureStampFileName)						
+		Else
+			Call tempDoc.Replaceitemvalue("signatureStampFileName", ArrayAppend(tempDoc.signatureStampFileName, signatureStampFileName))
+		End If
+
+		If stampPlacement = "LNC" Then 
+			'Left bottom corner
+			Call tempDoc.Replaceitemvalue("signatureStampX", "100")
+			Call tempDoc.Replaceitemvalue("signatureStampY", "60")
+		ElseIf stampPlacement = "RNC" Then 
+			'Right bottom corner
+			Call tempDoc.Replaceitemvalue("signatureStampX", "100")
+			Call tempDoc.Replaceitemvalue("signatureStampY", "160")
+		Else 
+			'Center bottom
+			Call tempDoc.Replaceitemvalue("signatureStampX", "100")
+			Call tempDoc.Replaceitemvalue("signatureStampY", "260")
+		End If
+		Call drawStampFNS(FullTrim(sign_prop), signatureStampWidth, signatureStampHeight, signatureFontSize, True, False, tempDir & extractDir & signatureStampFileName)
+		Call tempDoc.Replaceitemvalue("pathsToZip", ArrayAppend(tempDoc.pathsToZip, tempDir & extractDir & signatureStampFileName))
+		
+		counter = counter + 1
+		
+	End ForAll
+	
+	
+End Sub
+
+
+Sub extractMainAttachments(doc As NotesDocument, tempDoc As NotesDocument, profile As NotesDocument)
+	Dim counter As Integer
+	Dim rtitem As NotesRichTextItem
+	Dim extractFileName As String
+	Dim tempDir As String
+	Dim extractDir As String
+	Dim extention As String
+	
+	tempDir = profile.Folder_Temp(0) 
+	extractDir = tempDoc.extractDir(0)
+	counter = 1
+	
+	If doc.HasItem("Body") Then
+		Set rtitem = doc.GetFirstItem("Body")
+		If (rtitem.Type = RICHTEXT) Then
+			If Not IsEmpty(rtitem.EmbeddedObjects) Then	
+				ForAll o In rtitem.EmbeddedObjects
+					If (o.Type = EMBED_ATTACHMENT) Then	
+						
+						extention = LCase(StrRightBack(o.Source, "."))
+						
+						If extention = "p7s" Then
+							
+							extractFileName = mainDocSignatureNameBase + getFileSequenceNumber(counter) + "." + extention
+								
+							If tempDoc.p7s_path(0)="" Then
+								Call tempDoc.Replaceitemvalue("p7s_path", tempDir & extractDir & extractFileName)						
+							Else
+								Call tempDoc.Replaceitemvalue("p7s_path", ArrayAppend(tempDoc.p7s_path, tempDir & extractDir & extractFileName))
+							End If	
+							
+							If tempDoc.p7s_file(0)="" Then
+								Call tempDoc.Replaceitemvalue("p7s_file", extractFileName)						
+							Else
+								Call tempDoc.Replaceitemvalue("p7s_file", ArrayAppend(tempDoc.p7s_file, extractFileName))
+							End If
+							
+							counter = counter + 1
+							
+						Else
+							extractFileName = mainDocNameBase + "." + extention
+							
+							Call tempDoc.Replaceitemvalue("mainDocPath", tempDir & extractDir & extractFileName)
+							Call tempDoc.Replaceitemvalue("mainDocFileName", extractFileName)
+						End If
+						
+						'This is only for MEDO version 2.7
+						If tempDoc.pathsToZip(0)="" Then
+							Call tempDoc.Replaceitemvalue("pathsToZip", tempDir & extractDir & extractFileName)						
+						Else
+							Call tempDoc.Replaceitemvalue("pathsToZip", ArrayAppend(tempDoc.pathsToZip, tempDir & extractDir & extractFileName))
+						End If	
+						
+						'Write file name in mainDocs field
+						If tempDoc.mainDocs(0)="" Then
+							Call tempDoc.Replaceitemvalue("mainDocs", extractFileName)						
+						Else
+							Call tempDoc.Replaceitemvalue("mainDocs", ArrayAppend(tempDoc.mainDocs, extractFileName))
+						End If
+						
+						Call o.ExtractFile(tempDir & extractDir & extractFileName)			
+						
+					End If						
+				End ForAll				
+			End If				
+		End If
+	End If 
+	
+	If tempDoc.mainDocFileName(0) = "" Then
+		Error 1408, "Нет удалось найти главный документ"
+	End If
+	
+	If doc.medo_version(0) = "2.7" Then			
+		If LCase(StrRightBack(tempDoc.mainDocFileName(0), ".")) <> "pdf" Then
+			Error 1408, "Главный документ не в формате pdf"				
+		End If
+		If tempDoc.p7s_path(0) = "" Then
+			Error 1408, "Отсутствует файл электронной подписи"		
+		End If
+	End If	
+	
+End Sub
 'VF 2013-10-03 Замена недопустимых  в XML символов
 Function ReplaceXMLSymbols(source As String) As String
 	Dim workStr As String
@@ -693,7 +909,7 @@ Function addStampImagesToPfd(sourceDir As String, tempDoc As NotesDocument, doc 
 	
 	Call pdf.savePdfToFile(sourceDir + signedPdfFileName)
 
-	Call tempDoc.Replaceitemvalue("file_paths", ArrayAppend(tempDoc.file_paths, sourceDir + signedPdfFileName))
+	Call tempDoc.Replaceitemvalue("pathsToZip", ArrayAppend(tempDoc.pathsToZip, sourceDir + signedPdfFileName))
 	Call doc.Replaceitemvalue("mainDocs", signedPdfFileName)
 	
 	addStampImagesToPfd = True
@@ -715,119 +931,17 @@ Function FormatToGUID(s As String) As String
 	FormatToGUID = Mid$(s, 1, 8) + "-" + Mid$(s, 9, 4) + "-" + Mid$(s, 13, 4) + "-" + Mid$(s, 17, 4) + "-" + Mid$(s, 21, 12)
 	
 End Function
-
-Function createStampImages(doc As NotesDocument, tempDoc As NotesDocument, profile As NotesDocument) As Boolean
-
-	createStampImages = False
+%REM
+	Form counting ending in format of three characters, e.g 001, 002
+%END REM
+Function getFileSequenceNumber(file_index As Integer) As String
 	
-	Dim pathP7s As String
-	Dim dirTmp As String
-	Dim extractDir As String	
-	Dim stampPlacement As String
-	
-	pathP7s = tempDoc.p7s_path(0)	
-	dirTmp = profile.Folder_Temp(0)
-	If Right(dirTmp, 1)<>"\" Then dirTmp = dirTmp & "\"
-	extractDir = tempDoc.extractDir(0)
-	stampPlacement = profile.StampPlacement(0)
-	
-	'Create registry stamp
-	Const regStampFileName = "reg_stamp.png"
-	Const regStampWidth = 100
-	Const regStampHeight = 14
-	Const regStampFontSize = 12
-
-	Dim reg_str(0 To 0) As String
-
-	'Date	
-	Dim reg_date As NotesDateTime
-	Dim reg_date_item As NotesItem
-	Set reg_date_item = doc.GetFirstItem("Log_RgDate")
-	Set reg_date = reg_date_item.DateTimeValue
-	
-	reg_str(0) = formatDDMMYYYY(reg_date) + "               " + doc.Log_Numbers(0)  
-	
-	Call tempDoc.Replaceitemvalue("regStampWidth", CStr(regStampWidth))
-	Call tempDoc.Replaceitemvalue("regStampHeight", CStr(regStampHeight))
-	Call tempDoc.Replaceitemvalue("regStampFileName", regStampFileName)
-	Call tempDoc.Replaceitemvalue("regStampPage", "1")
-	Call tempDoc.Replaceitemvalue("regStampX", "7")
-	Call tempDoc.Replaceitemvalue("regStampY", "55")
-	Call drawSimpleStamp(reg_str, regStampWidth, regStampHeight, regStampFontSize, ALIGN_CENTER_, ALIGN_Middle_, dirTmp & extractDir & regStampFileName)
-	Call tempDoc.Replaceitemvalue("file_paths", ArrayAppend(tempDoc.file_paths, dirTmp & extractDir & regStampFileName))
-
-
-
-	
-	'Create signature stamp
-	Const signatureStampFileName = "signature_stamp.png"
-	Const signatureStampWidth = 72
-	Const signatureStampHeight = 30
-	Const signatureFontSize = 6
-	Dim signature As String
-	Dim signatureParsed As Variant
-	Dim signatureOwner As String
-	Dim signatureValidFrom As String
-	Dim signatureValidTo As String
-	Dim signatureCertificate As String
-
-	'TODO revise IsFileBase64 part
-	If IsFileBase64(pathP7s) Then
-		Dim p7s_ef As String
-		p7s_ef = pathP7s
-		p7s_ef = StrLeftBack(p7s_ef, ".")
-		p7s_ef = p7s_ef + "_enc" + ".p7s"
-		If DecodeFile(pathP7s, dirTmp & extractDir & "p7s_ef_enc.p7s") Then
-			signature = getAllsignInfoFromFile(dirTmp & extractDir & p7s_ef)
-		End If
+	If file_index < 10 Then
+		getFileSequenceNumber = "00" + CStr(file_index) 	
+	ElseIf	file_index < 100 Then
+		getFileSequenceNumber = "0" + CStr(file_index)
 	Else
-		signature = getAllsignInfoFromFile(pathP7s)	
+		getFileSequenceNumber = CStr(file_index)
 	End If
-
-	signatureParsed = Split(signature, " - ")
-	signatureParsed = FullTrim(signatureParsed)
-
-	signatureOwner = signatureParsed(0)
-	signatureCertificate = signatureParsed(1)
-	signatureValidFrom = signatureParsed(2)
-	signatureValidTo = signatureParsed(3)
-	
-	Dim sign_prop(0 To 2) As String
-	sign_prop(0) = "Сертификат:|" + signatureCertificate
-	sign_prop(1) = "Владелец:|<b>" + signatureOwner
-	sign_prop(2) = "Действителен:|с  " + signatureValidFrom + "  по  " + signatureValidTo
-
-	'	Dim sign_prop(0 To 2) As String
-	'	sign_prop(0) = "Сертификат:|" + "Сертификат № 1408"
-	'	sign_prop(1) = "Владелец:|<b>" + "Фамилия Имя Отчество"
-	'	sign_prop(2) = "Действителен:|с  " + "01.01.0001" + "  по  " + "01.01.0002"
-
-
-	Call tempDoc.Replaceitemvalue("signatureStampWidth", CStr(signatureStampWidth))
-	Call tempDoc.Replaceitemvalue("signatureStampHeight", CStr(signatureStampHeight)) 
-	Call tempDoc.Replaceitemvalue("signatureStampFileName", signatureStampFileName)
-	Call tempDoc.Replaceitemvalue("signatureStampPage", doc.InRS_Pages(0))
-
-	If stampPlacement = "LNC" Then 
-		'Left bottom corner
-		Call tempDoc.Replaceitemvalue("signatureStampX", "100")
-		Call tempDoc.Replaceitemvalue("signatureStampY", "60")
-	ElseIf stampPlacement = "RNC" Then 
-		'Right bottom corner
-		Call tempDoc.Replaceitemvalue("signatureStampX", "100")
-		Call tempDoc.Replaceitemvalue("signatureStampY", "160")
-	Else 
-		'Center bottom
-		Call tempDoc.Replaceitemvalue("signatureStampX", "100")
-		Call tempDoc.Replaceitemvalue("signatureStampY", "260")
-	End If
-	Call drawStampFNS(FullTrim(sign_prop), signatureStampWidth, signatureStampHeight, signatureFontSize, True, False, dirTmp & extractDir & signatureStampFileName)
-	Call tempDoc.Replaceitemvalue("file_paths", ArrayAppend(tempDoc.file_paths, dirTmp & extractDir & signatureStampFileName))
-
-	'	If Not addStampImagesToPfd(dirTmp & extractDir, tempDoc, doc) Then
-	'		Error 1408, "Ошибка при создании файла визуализации"
-	'	End If
-
-	createStampImages = True
 	
 End Function

@@ -28,6 +28,7 @@ TRAP_ERROR:
 	Resume FINALLY
 
 FINALLY:
+	On Error Resume Next
 	'Some final code here
 
 End Sub
