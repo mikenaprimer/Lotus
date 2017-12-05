@@ -5,6 +5,8 @@ array(0) = "qwe"
 array(1) = "asd"
 array(2) = "zxc"
 
+Ubound(array) = 2
+
 'Add all to array
 i% = 0
 Do While Not smthg Is Nothing

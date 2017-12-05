@@ -9,7 +9,7 @@ Sub Initialize
 TRAP_ERROR:
 	'There is no actual error, it is thrown by us
 	If Err = 1408 Then 
-		MessageBox Error$, 16, "Отправка на регистрацию"
+		MessageBox Error$, 16, "Ошибка"
 		'Call SendNotification(db, Error$)
 	Else
 		Dim errorMessage As String		

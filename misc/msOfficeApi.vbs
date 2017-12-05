@@ -1,8 +1,9 @@
 Sub exportToMSExcel
-	Dim session As New NotesSession
-	Dim db As NotesDatabase
+
+'===================================
+'=             Excel               =
+'===================================
 	
-	'Excel
 	Dim xlApp As Variant
 	Dim xlsheet As Variant
 	Dim xlwb As Variant	
@@ -34,9 +35,13 @@ Sub exportToMSExcel
 	
 	xlApp.Visible = True
 
-	'Word
+'===================================
+'=             Word                =
+'===================================
+	
 	Dim wordApp as Variant
 	Set wordApp = CreateObject("Word.Application")
+	wordApp.Visible = True
 
 	'Check if app successfully opened
 	If DataType (wordApp) <= 1 Then
@@ -44,12 +49,22 @@ Sub exportToMSExcel
 	End If
 
 	'Open file
-	wordApp.Documents.Add pathToFile 
+	wordApp.Documents.Add "pathToFile" 
+
+	'Quit app
+	wordApp.Application.Quit
+
+	'Tables
+	'Get table
+	Set wordTable = wordApp.ActiveDocument.Tables(1)
+	'Get rows in table
+	rowCount = wordTable.Rows.Count
+	'Get cell value
+	wordTable.Rows(1).Cells(1).Range.Text
 
 	'Save file as pdf
 	Call wordApp.ActiveDocument.ExportAsFixedFormat(pdfPath, 17, False, 0, 0, 1, 1, 0, True, True, 0, True, True, True)
 					
-	'Quit app
-	wordApp.Application.Quit
+	
 	
 End Sub

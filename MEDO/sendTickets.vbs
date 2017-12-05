@@ -34,14 +34,29 @@ End Sub
 Sub createAcknowledgment(_
 	pathToFile As String,_
 	currDateTime As NotesDateTime,_
-	orgUID As String,_
-	orgName As String,_
+	profile As NotesDocument,_
 	messageUID As String,_
 	receivedDateTime As NotesDateTime,_
 	isAccepted As Boolean,_
 	comment As String)
 	
 	Dim fileNum As Integer
+	
+	Dim orgUID As String
+	Dim orgName As String
+	
+	orgUID = profile.Org_UID(0) 
+	orgName = profile.Org_Name(0)
+	
+	If orgUID = "" Or orgName = "" Then
+		Error 1408, "Не удалось получить необходимую информацию из профайла базы"
+	End If
+	If messageUID = "" Then 
+		Error 1408, "Не указан GUID сообщения"
+	End If	
+	If receivedDateTime Is Nothing Then 
+		Error 1408, "Не указано время получения сообщения"
+	End If
 	
 	fileNum% = FreeFile()	
 	Open pathToFile For Output As fileNum%
@@ -80,60 +95,45 @@ Sub sendTicket(profile As NotesDocument, addresses() As String, messageUID As St
 	Dim dirOut As String
 	Dim dirTmp As String
 	Dim dirCurr As String	
-	Dim orgUID As String
-	Dim orgName As String
 	
 	Const acknowledgmentFileName = "acknowledgment.xml"
 	Const annotationFileName = "annotation.txt"	
-	Const envelopeFileName = "envelope.ltr"
+	Const envelopeFileName = "envelope.ini"
 	
 	currDateTime.SetNow
 	
 	dirCurr = "Ticket_" + messageUID + "_" + Replace(currDateTime.Localtime,":","_")
 	dirOut = profile.Folder_Out(0)		'~/MEDO/OUT/
-	dirTmp = profile.Folder_Temp(0)		'~/MEDO/TMP/	
+	dirTmp = profile.Folder_Temp(0)		'D:/MEDO/TMP/
+	If dirTmp = "" Or dirOut = "" Then
+		Error 1408, "Из профайла базы не удалось получить необходимую информацию о каталогах выгрузки"
+	End If
 	If Right(dirOut, 1)<>"\" Then dirOut = dirOut & "\"
 	If Right(dirTmp, 1)<>"\" Then dirTmp = dirTmp & "\"
 	
-	orgUID = profile.Org_UID(0)
-	orgName = profile.Org_Name(0)
-	
-	If dirTmp = "" Or dirOut = "" Or orgUID = "" Or orgName = "" Then
-		Error 1408, "Не удалось получить необходимую информацию из профайла базы"
-	End If 	
+	'Checks
 	If addresses(0) = "" Then
 		Error 1408, "Не указан адресат сообщения"
 	End If
-	If messageUID = "" Then 
-		Error 1408, "Не указан GUID сообщения"
-	End If	
-	If receivedDateTime Is Nothing Then 
-		Error 1408, "Не указано время получения сообщения"
-	End If
-	
 	
 	MkDir dirTmp + dirCurr
 	
 	'Create acknowledgment.xml
 	Call createAcknowledgment(_
-	dirTmp + dirCurr + "\" + acknowledgmentFileName,_
+		dirTmp + dirCurr + "\" + acknowledgmentFileName,_
 		currDateTime,_
-		orgUID,_
-		orgName,_
+		profile,_
 		messageUID,_
 		receivedDateTime,_
 		isAccepted,_
 		comment) 
 	
-	'TODO ?
-	'Create annotation.txt 	
-	'Call createAnnotation 
+	Call createEnvelopeForTicket(dirTmp + dirCurr + "\" + envelopeFileName, addresses()) 
 	
-	Call createEnvelopeForTicket(dirTmp + dirCurr + "/" + envelopeFileName, addresses()) 
-	
+	'Copy files to OUT directory
 	MkDir dirOut & dirCurr	
 	FileCopy dirTmp + dirCurr + "\" + acknowledgmentFileName, dirOut + dirCurr + "\" + acknowledgmentFileName 	
-	FileCopy dirTmp + dirCurr + "/" + envelopeFileName, dirOut + dirCurr + "/" + envelopeFileName 
+	FileCopy dirTmp + dirCurr + "\" + envelopeFileName, dirOut + dirCurr + "/" + envelopeFileName 
 
 	GoTo FINALLY	
 
@@ -155,12 +155,14 @@ TRAP_ERROR:
 		'Call SendNotification(db, errorMessage)
 	End If	
 
-	
-
 	Resume FINALLY
 
 FINALLY:
-	'Some final code here
+	On Error Resume Next
+	'Remove file from TMP directory
+	Kill dirTmp + dirCurr + "\" + acknowledgmentFileName
+	Kill dirTmp + dirCurr + "\" + envelopeFileName
+	RmDir dirTmp + dirCurr
 	
 	
 End Sub
@@ -172,7 +174,7 @@ Function createEnvelopeForTicket (pathToFile As String, addresses() As String)
 	fileNum = FreeFile()
 	Open pathToFile For Output As fileNum
 	Print #fileNum, "[ПИСЬМО КП ПС СЗИ]"		
-	Print #fileNum, "ТЕМА=ЭСД МЭДО(Квитанция)" 'TODO insert some identifier
+	Print #fileNum, "ТЕМА=ЭСД МЭДО(Квитанция)" 'TODO insert some identifier?
 	Print #fileNum, "ШИФРОВАНИЕ=0"		
 	Print #fileNum, "АВТООТПРАВКА=1"		
 	Print #fileNum, "ЭЦП=1" 

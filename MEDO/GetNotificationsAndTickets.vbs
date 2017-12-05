@@ -33,8 +33,8 @@ Sub Initialize
 	
 	Call tmpdoc.ReplaceItemValue("medo_docType", "Уведомление")
 	If tmpdoc.getitemvalue("medo_docType")(0) = "Уведомление" Then
-		Call processNotifications("0001503581", "notification.xml", reader, archivePath)
-		Call processNotifications("0001515730", "notification.xml", reader, archivePath)
+		Call processNotifications("0001503581", "notification.xml", reader)
+		Call processNotifications("0001515730", "notification.xml", reader)
 	End If	
 	
 	
@@ -184,16 +184,18 @@ Function CheckCodeType(folder As String, fname As String) As Integer
 End Function
 Sub createTicketDoc()
 	
-	Dim originalID As String
-	
-	'Open server MEDO adapter database (DELO2/delo/adapter_medo27.nsf)
 	Dim profile As NotesDocument
-	Set profile = db.GetProfileDocument("IO_Setup")
 	Dim serverMEDOdbServer As String
 	Dim serverMEDOdbPath As String
+	Dim serverAdapterDb As NotesDatabase
+	Dim originalID As String
+	
+	Set profile = db.GetProfileDocument("IO_Setup")	
+	
+	'Open server MEDO adapter database (DELO2/delo/adapter_medo27.nsf)	
 	serverMEDOdbServer = profile.serverMEDOdbServer(0) 'DELO2\AKO\KIROV\RU
 	serverMEDOdbPath = profile.serverMEDOdbPath(0) 'delo/adapter_medo27		
-	Dim serverAdapterDb As New NotesDatabase(serverMEDOdbServer, serverMEDOdbPath)	
+	Set serverAdapterDb = New NotesDatabase(serverMEDOdbServer, serverMEDOdbPath)	
 	
 	'Find relative entry in Outgoings and get needed data
 	Dim outSendView As NotesView
@@ -248,15 +250,17 @@ Sub createTicketDoc()
 	
 End Sub
 Sub createNotificationDoc()		
-	
-	'Open server MEDO adapter database (DELO2/delo/adapter_medo27.nsf)
 	Dim profile As NotesDocument
-	Set profile = db.GetProfileDocument("IO_Setup")
 	Dim serverMEDOdbServer As String
 	Dim serverMEDOdbPath As String
+	Dim serverAdapterDb As NotesDatabase
+	
+	Set profile = db.GetProfileDocument("IO_Setup")	
+	
+	'Open server MEDO adapter database (DELO2/delo/adapter_medo27.nsf)	
 	serverMEDOdbServer = profile.serverMEDOdbServer(0) 'DELO2\AKO\KIROV\RU
 	serverMEDOdbPath = profile.serverMEDOdbPath(0) 'delo/adapter_medo27		
-	Dim serverAdapterDb As New NotesDatabase(serverMEDOdbServer, serverMEDOdbPath)	
+	Set serverAdapterDb = New NotesDatabase(serverMEDOdbServer, serverMEDOdbPath)	
 	
 	'Find relative entry in adapter's outgoings and get needed data
 	Dim outSendView As NotesView
@@ -278,7 +282,7 @@ Sub createNotificationDoc()
 	Call aDoc.ReplaceItemValue("originalDoc_DocID", originalID)
 	Call aDoc.ReplaceItemValue("RegNumOriginal", tmpDoc.RegNumOriginal(0))
 	Call aDoc.ReplaceItemValue("RegDateOriginal", tmpDoc.RegDateOriginal(0))
-	Call aDoc.ReplaceItemValue("Status", tmpDoc.Status(0))
+	Call aDoc.ReplaceItemValue("notificationTypeInWords", tmpDoc.notificationTypeInWords(0))
 	If tmpDoc.notificationType(0) = "documentAccepted" Then
 		Call aDoc.ReplaceItemValue("regNumOSS", tmpDoc.regNumOSS(0))
 		Call aDoc.ReplaceItemValue("regDateOSS", tmpDoc.regDateOSS(0))
@@ -309,7 +313,7 @@ Sub createNotificationDoc()
 	Call oDoc.ReplaceItemValue("h_Authors", originalDoc.h_Authors)
 	Call oDoc.ReplaceItemValue("RegNumOriginal", tmpDoc.RegNumOriginal(0))
 	Call oDoc.ReplaceItemValue("RegDateOriginal", tmpDoc.RegDateOriginal(0))
-	Call oDoc.ReplaceItemValue("Status", tmpDoc.Status(0))
+	Call oDoc.ReplaceItemValue("notificationTypeInWords", tmpDoc.notificationTypeInWords(0))
 	If tmpDoc.notificationType(0) = "documentAccepted" Then
 		Call oDoc.ReplaceItemValue("regNumOSS", tmpDoc.regNumOSS(0))
 		Call oDoc.ReplaceItemValue("regDateOSS", tmpDoc.regDateOSS(0))
@@ -346,8 +350,6 @@ Sub processTickets(ticketDir As String, xmlfilename As String, reader As XmlNode
 	Call reader.ReadFile(MainPath & ticketDir & "\" & xmlfilename, codetype)
 	
 	'Get prefix		
-	'TODO ensure this is ok		
-	'prefix = GetAbnormalPrefixName(reader) 
 	prefix = reader.thisNode.Lastchild.Prefix
 	If prefix = "" Then Error 1408, "Отсутствует префикс в XML файле уведомления"
 		
@@ -412,7 +414,7 @@ FINALLY:
 	
 		
 End Sub
-Sub processNotifications(notificationDir As String, xmlfilename As String, reader As XmlNodeReader, archivePath As String)
+Sub processNotifications(notificationDir As String, xmlfilename As String, reader As XmlNodeReader)
 	On Error GoTo TRAP_ERROR
 	
 	'TODO uncomment code when release
@@ -420,32 +422,40 @@ Sub processNotifications(notificationDir As String, xmlfilename As String, reade
 	'TODO reportPepared is this right (misspelled)
 	
 	%REM
-		Notification types:
-		1 - documentAccepted = "Зарегистрирован"
-		2 - documentRefused	= "Отказано в регистрации"
-		3 - executorAssigned = "Назначен исполнитель"
-		4 - reportPepared = "Доклад подготовлен"
-		5 - reportSent = "Доклад направлен"
-		6 - courseChanged = "Исполнение"
-		7 - documentPublished = "Опубликование"
+		|¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯|¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯|
+		| NOTIFICATION TYPES |   NOTIFICATION TYPES   |
+		|                    |        IN WORDS        |
+		|____________________|________________________|
+		|                    |                        |
+		| documentAccepted   | Зарегистрирован        |
+		|____________________|________________________|
+		|                    |                        |
+		| documentRefused    | Отказано в регистрации |
+		|____________________|________________________|
+		|                    |                        |
+		| executorAssigned   | Назначен исполнитель   |
+		|____________________|________________________|
+		|                    |                        |
+		| reportPepared      | Доклад подготовлен     |
+		|____________________|________________________|
+		|                    |                        |
+		| reportSent         | Доклад направлен       |
+		|____________________|________________________|
+		|                    |                        |
+		| courseChanged      | Исполнение             |
+		|____________________|________________________|
+		|                    |                        |
+		| documentPublished  | Опубликование          |
+		|____________________|________________________|
 	%END REM
-	%REM
-		Notification states:
-		1 - Зарегистрирован
-		2 - Отказано в регистрации
-		3 - Назначен исполнитель
-		4 - Доклад подготовлен
-		5 - Доклад направлен
-		6 - Исполнение
-		7 - Опубликование
-	%END REM
+	
 	
 	Dim codetype As Integer
 	Dim prefix As String
 	
 	Dim adapterDoc_GUID As String
 	Dim notificationType As String
-	Dim notificationStatus As String
+	Dim notificationTypeInWords As String
 	Dim refusedReason As String
 	Dim regNumOriginal As String
 	Dim regDateOriginal As String
@@ -460,8 +470,6 @@ Sub processNotifications(notificationDir As String, xmlfilename As String, reade
 	Call reader.ReadFile(MainPath & notificationDir & "\" & xmlfilename, codetype)
 	
 	'Get prefix		
-	'TODO ensure this is ok		
-	'prefix = GetAbnormalPrefixName(reader) 
 	prefix = reader.thisNode.Lastchild.Prefix
 	If prefix = "" Then Error 1408, "Отсутствует префикс в XML файле уведомления"	
 
@@ -484,10 +492,10 @@ Sub processNotifications(notificationDir As String, xmlfilename As String, reade
 	If regDateOriginal = "" Then Error 1408, "Не удалось извлечь дату регистрации документа из уведомления"
 	Call tmpdoc.Replaceitemvalue("RegDateOriginal", regDateOriginal)	
 	
-	'Status
-	notificationStatus = reader.get(prefix + ":communication." + prefix +":notification.@" + prefix +":type")
-	If notificationStatus = "" Then Error 1408, "Не удалось определить статус уведомления"
-	Call tmpdoc.Replaceitemvalue("Status", notificationStatus)	
+	'Notification type in words
+	notificationTypeInWords = reader.get(prefix + ":communication." + prefix +":notification.@" + prefix +":type")
+	If notificationTypeInWords = "" Then Error 1408, "Не удалось определить статус уведомления"
+	Call tmpdoc.Replaceitemvalue("notificationTypeInWords", notificationTypeInWords)	
 	
 	'Date of processing document on the sender's side
 	processDateOSS = reader.get(prefix + ":communication." + prefix +":notification." + prefix + ":" + notificationType+ "." + prefix + ":time")

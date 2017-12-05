@@ -3,6 +3,9 @@
 		- Only ONE eSignature with each attachment
 		- Debenu
 		- CryptoPro Java Module v. 2.0.39014
+	Issues:
+		- Stamp placement realized only for center bottom
+		- Base64 decoding may throw an error (can't test coz do not have base64 file)
 %END REM
 Option Public
 Option Declare
@@ -267,8 +270,6 @@ Function createDocumentXml22(doc As NotesDocument, tempDoc As NotesDocument, pro
 	Print #fileNum%, "</xdms:document>"
 	
 	'Files
-	'TODO group?
-	'<xdms:pages>0</xdms:pages> optional
 	Print #fileNum%, "<xdms:files>"
 	counter=0	
 	ForAll mainDoc In tempDoc.mainDocs
@@ -475,63 +476,79 @@ Sub createPassportXML(doc As NotesDocument, tempDoc As NotesDocument, profile As
 	Print #fileNum%, "<c:annotation>" & ReplaceXMLSymbols(doc.Subject(0)) & "</c:annotation>"
 	Print #fileNum%, "</c:requisites>"
 	
-	'TODO ForAll signatures
-	'Authors 
-	Print #fileNum%, "<c:authors>"
-	Print #fileNum%, "<c:author>"
-	Print #fileNum%, "<c:organization>"
-	Print #fileNum%, "<c:title>" & profile.Org_Name(0) & "</c:title>"
-	Print #fileNum%, "</c:organization>"		
-	'Registration stamp
-	Print #fileNum%, "<c:registration>"
-	Print #fileNum%, "<c:number>"& doc.Log_Numbers(0) &"</c:number>"
-	Print #fileNum%, "<c:date>"& formatYYYYMMDD(doc.GetFirstItem("Log_RgDate").DateTimeValue) &"</c:date>"
-	Print #fileNum%, |<c:registrationStamp c:localName="| + tempDoc.regStampFileName(0) |">|
-	Print #fileNum%, "<c:position>"
-	Print #fileNum%, "<c:page>" & tempDoc.regStampPage(0) & "</c:page>"
-	Print #fileNum%, "<c:topLeft>"
-	Print #fileNum%, "<c:x>" & tempDoc.regStampX(0) & "</c:x>"
-	Print #fileNum%, "<c:y>" & tempDoc.regStampY(0) & "</c:y>"
-	Print #fileNum%, "</c:topLeft>"
-	Print #fileNum%, "<c:dimension>"
-	Print #fileNum%, "<c:w>" & tempDoc.regStampWidth(0) &"</c:w>"
-	Print #fileNum%, "<c:h>" & tempDoc.regStampHeight(0) &"</c:h>"
-	Print #fileNum%, "</c:dimension>"
-	Print #fileNum%, "</c:position>"
-	Print #fileNum%, "</c:registrationStamp>"
-	Print #fileNum%, "</c:registration>"
-	'Signature stamp
-	Print #fileNum%, "<c:sign>"
-	Print #fileNum%, "<c:person>"
-	Print #fileNum%, "<c:post>Не указано</c:post>"
-	Print #fileNum%, "<c:name>" & doc.Log_Sign(0) & "</c:name>"
-	Print #fileNum%, "</c:person>"
-	Print #fileNum%, "<c:documentSignature c:localName="+ {"} + tempDoc.p7s_file(0) + {"} + " c:type=""Утверждающая"">"
-	Print #fileNum%, "<c:signatureStamp c:localName="+ {"} + tempDoc.signatureStampFileName(0) + {"}+ ">"
-	Print #fileNum%, "<c:position>"
-	Print #fileNum%, "<c:page>" + tempDoc.signatureStampPage(0) + "</c:page>"
-	Print #fileNum%, "<c:topLeft>"
-	If doc.Getitemvalue("place_of_ECP")(0) = "1" Then 'вверху страницы
-		Print #fileNum%, "<c:x>100</c:x>"
-		Print #fileNum%, "<c:y>60</c:y>"
-	ElseIf	doc.Getitemvalue("place_of_ECP")(0) = "2" Then ' центр страницы
-		Print #fileNum%, "<c:x>100</c:x>"
-		Print #fileNum%, "<c:y>160</c:y>"
-	Else 'по центру внизу
-		Print #fileNum%, "<c:x>100</c:x>"
-		Print #fileNum%, "<c:y>260</c:y>"
-	End If
-	Print #fileNum%, "</c:topLeft>"
-	Print #fileNum%, "<c:dimension>"
-	Print #fileNum%, "<c:w>" & tempDoc.signatureStampWidth(0) & "</c:w>"
-	Print #fileNum%, "<c:h>" & tempDoc.signatureStampHeight(0) & "</c:h>"
-	Print #fileNum%, "</c:dimension>"
-	Print #fileNum%, "</c:position>"
-	Print #fileNum%, "</c:signatureStamp>"
-	Print #fileNum%, "</c:documentSignature>"
-	Print #fileNum%, "</c:sign>"
-	Print #fileNum%, "</c:author>"
-	Print #fileNum%, "</c:authors>"
+	'Authors
+	Dim i As Integer 
+	Print #fileNum%, |<c:authors>|
+	For i = 0 To UBound(doc.Log_Sign)
+		Print #fileNum%, |<c:author>|
+		Print #fileNum%, |<c:organization>|
+		Print #fileNum%, |<c:title>| & profile.Org_Name(0) & |</c:title>|
+		Print #fileNum%, |</c:organization>|		
+		'Registration stamp
+		Print #fileNum%, |<c:registration>|
+		Print #fileNum%, |<c:number>| & doc.Log_Numbers(0) & |</c:number>|
+		Print #fileNum%, |<c:date>| & formatYYYYMMDD(doc.GetFirstItem("Log_RgDate").DateTimeValue) & |</c:date>|
+		Print #fileNum%, |<c:registrationStamp c:localName="| + tempDoc.regStampFileName(0) |">|
+		Print #fileNum%, |<c:position>|
+		Print #fileNum%, |<c:page>| & tempDoc.regStampPage(0) & |</c:page>|
+		Print #fileNum%, |<c:topLeft>|
+		Print #fileNum%, |<c:x>| & tempDoc.regStampX(0) & |</c:x>|
+		Print #fileNum%, |<c:y>| & tempDoc.regStampY(0) & |</c:y>|
+		Print #fileNum%, |</c:topLeft>|
+		Print #fileNum%, |<c:dimension>|
+		Print #fileNum%, |<c:w>| & tempDoc.regStampWidth(0) & |</c:w>|
+		Print #fileNum%, |<c:h>| & tempDoc.regStampHeight(0) & |</c:h>|
+		Print #fileNum%, |</c:dimension>|
+		Print #fileNum%, |</c:position>|
+		Print #fileNum%, |</c:registrationStamp>|
+		Print #fileNum%, |</c:registration>|
+		'Signature stamp
+		Print #fileNum%, |<c:sign>|
+		Print #fileNum%, |<c:person>|
+		Print #fileNum%, |<c:post>| & doc.signerPost(i) & |</c:post>|
+		Print #fileNum%, |<c:name>| & doc.Log_Sign(i) & |</c:name>|
+		Print #fileNum%, |</c:person>|
+		Print #fileNum%, |<c:documentSignature c:localName="| + tempDoc.p7s_file(i) + |" c:type="Утверждающая">|
+		Print #fileNum%, |<c:signatureStamp c:localName="| + tempDoc.signatureStampFileName(i) + |">|
+		Print #fileNum%, |<c:position>|
+		Print #fileNum%, |<c:page>| + tempDoc.signatureStampPage(0) + |</c:page>|
+		Print #fileNum%, |<c:topLeft>|
+		Print #fileNum%, |<c:x>80</c:x>|
+		
+		'Calculate "y" coordinate (for each stamp add 30 pts to "y", so that stamps are located one under the other)
+		Dim y As Integer
+		y = 170
+		Dim j As Integer
+		For j = 0 To i
+			y = y + 30
+		Next
+		Print #fileNum%, |<c:y>| & y & |</c:y>|
+		
+'		If profile.StampPlacement(0) = "LBC" Then 
+''			Left bottom corner
+'			Print #fileNum%, |<c:x>100</c:x>|
+'			Print #fileNum%, |<c:y>60</c:y>|
+'		ElseIf profile.StampPlacement(0) = "RBC" Then 
+''			Right bottom corner
+'			Print #fileNum%, |<c:x>100</c:x>|
+'			Print #fileNum%, |<c:y>160</c:y>|
+'		ElseIf profile.StampPlacement(0) = "CB" Then 
+''			Center bottom
+'			Print #fileNum%, |<c:x>80</c:x>|
+'			Print #fileNum%, |<c:y>230</c:y>|
+'		End If
+		Print #fileNum%, |</c:topLeft>|
+		Print #fileNum%, |<c:dimension>|
+		Print #fileNum%, |<c:w>| & tempDoc.signatureStampWidth(0) & |</c:w>|
+		Print #fileNum%, |<c:h>| & tempDoc.signatureStampHeight(0) & |</c:h>|
+		Print #fileNum%, |</c:dimension>|
+		Print #fileNum%, |</c:position>|
+		Print #fileNum%, |</c:signatureStamp>|
+		Print #fileNum%, |</c:documentSignature>|
+		Print #fileNum%, |</c:sign>|
+		Print #fileNum%, |</c:author>|
+	Next
+	Print #fileNum%, |</c:authors>|
 	
 	'Addressees
 	Dim adr As String
@@ -595,7 +612,7 @@ Function CreateEnvelope (doc As NotesDocument, tempDoc As NotesDocument, pathToF
 	Print #fileNum, "ТЕМА=ЭСД МЭДО(" & doc.Log_Numbers(0) & " от " & doc.Log_RgDate(0) & ")"
 	Print #fileNum, "ШИФРОВАНИЕ=0"		
 	Print #fileNum, "АВТООТПРАВКА=1"		
-	Print #fileNum, "ЭЦП=1" 'TODO 0 here?	
+	Print #fileNum, "ЭЦП=1"
 	
 		
 	Print #fileNum, "[АДРЕСАТЫ]"
@@ -654,15 +671,15 @@ Sub createRegStampImage(doc As NotesDocument, tempDoc As NotesDocument, tempDir 
 	Set reg_date_item = doc.GetFirstItem("Log_RgDate")
 	Set reg_date = reg_date_item.DateTimeValue
 	
-	reg_str(0) = formatDDMMYYYY(reg_date) + "               " + doc.Log_Numbers(0)  
+	reg_str(0) = formatDDMMYYYY(reg_date) + "                    " + doc.Log_Numbers(0)  
 	imagePath = tempDir & extractDir & regStampFileName
 	
 	Call tempDoc.Replaceitemvalue("regStampWidth", CStr(regStampWidth))
 	Call tempDoc.Replaceitemvalue("regStampHeight", CStr(regStampHeight))
 	Call tempDoc.Replaceitemvalue("regStampFileName",  regStampFileName)
 	Call tempDoc.Replaceitemvalue("regStampPage", "1")
-	Call tempDoc.Replaceitemvalue("regStampX", "7")
-	Call tempDoc.Replaceitemvalue("regStampY", "55")
+	Call tempDoc.Replaceitemvalue("regStampX", "15")
+	Call tempDoc.Replaceitemvalue("regStampY", "63")
 	
 	Call drawSimpleStamp(reg_str, regStampWidth, regStampHeight, regStampFontSize, ALIGN_CENTER_, ALIGN_Middle_, imagePath)
 	Call tempDoc.Replaceitemvalue("pathsToZip", ArrayAppend(tempDoc.pathsToZip, imagePath))
@@ -672,7 +689,6 @@ Sub createSignatureStampImage(tempDoc As NotesDocument, profile As NotesDocument
 	
 	Dim tempDir As String
 	Dim extractDir As String	
-	Dim stampPlacement As String
 	Dim imagePath As String
 	Dim p7sName As String
 	Dim signatureStampFileName As String
@@ -700,16 +716,11 @@ Sub createSignatureStampImage(tempDoc As NotesDocument, profile As NotesDocument
 		tempDir = profile.Folder_Temp(0)
 		If Right(tempDir, 1)<>"\" Then tempDir = tempDir & "\"
 		extractDir = tempDoc.extractDir(0)
-		stampPlacement = profile.StampPlacement(0)	
-
-		'TODO revise IsFileBase64 part
+		
 		If IsFileBase64(p7sPath) Then
-			Dim p7s_ef As String
-			p7s_ef = p7sPath
-			p7s_ef = StrLeftBack(p7s_ef, ".")
-			p7s_ef = p7s_ef + "_enc" + ".p7s"
-			If DecodeFile(p7sPath, tempDir & extractDir & "p7s_ef_enc.p7s") Then
-				signature = getAllsignInfoFromFile(tempDir & extractDir & p7s_ef)
+			Print "File is in base64 encoding"
+			If DecodeFile(p7sPath, tempDir & extractDir & "p7s_decoded.p7s") Then
+				signature = getAllsignInfoFromFile(tempDir & extractDir & "p7s_decoded.p7s")
 			End If
 		Else
 			signature = getAllsignInfoFromFile(p7sPath)	
@@ -740,20 +751,7 @@ Sub createSignatureStampImage(tempDoc As NotesDocument, profile As NotesDocument
 		Else
 			Call tempDoc.Replaceitemvalue("signatureStampFileName", ArrayAppend(tempDoc.signatureStampFileName, signatureStampFileName))
 		End If
-
-		If stampPlacement = "LNC" Then 
-			'Left bottom corner
-			Call tempDoc.Replaceitemvalue("signatureStampX", "100")
-			Call tempDoc.Replaceitemvalue("signatureStampY", "60")
-		ElseIf stampPlacement = "RNC" Then 
-			'Right bottom corner
-			Call tempDoc.Replaceitemvalue("signatureStampX", "100")
-			Call tempDoc.Replaceitemvalue("signatureStampY", "160")
-		Else 
-			'Center bottom
-			Call tempDoc.Replaceitemvalue("signatureStampX", "100")
-			Call tempDoc.Replaceitemvalue("signatureStampY", "260")
-		End If
+		
 		Call drawStampFNS(FullTrim(sign_prop), signatureStampWidth, signatureStampHeight, signatureFontSize, True, False, tempDir & extractDir & signatureStampFileName)
 		Call tempDoc.Replaceitemvalue("pathsToZip", ArrayAppend(tempDoc.pathsToZip, tempDir & extractDir & signatureStampFileName))
 		
@@ -866,9 +864,9 @@ End Function
 	Sub MakeCopyPDF
 	Description: Делаем копию вложенного pdf файла с накладыванием на него картинок штама и подписей
 %END REM
-Function addStampImagesToPfd(sourceDir As String, tempDoc As NotesDocument, doc As NotesDocument) As Boolean
-	Dim signedPdfFileName As String
-	signedPdfFileName = "signedPdf.pdf"
+Sub addStampImagesToPfd(sourceDir As String, tempDoc As NotesDocument, doc As NotesDocument)
+	
+	Const signedPdfFileName = "signedPdf.pdf"
 	Dim stamp_fileName As String
 	Dim stamp_page As Long
 	Dim stamp_x As Long
@@ -876,45 +874,48 @@ Function addStampImagesToPfd(sourceDir As String, tempDoc As NotesDocument, doc 
 	Dim stamp_w As Long
 	Dim stamp_h As Long
 	
-	addStampImagesToPfd = False
 
 	Dim pdf As New PDFFile() 	
-	Call pdf.loadPdfFromFile(tempDoc.pdf_path(0))	
+	Call pdf.loadPdfFromFile(tempDoc.mainDocPath(0))	
 
-	'Add registry number'
-	stamp_fileName = tempDoc.Getitemvalue("regStampFileName")(0)
-	stamp_page = CLng(tempDoc.Getitemvalue("regStampPage")(0))
+	'Add registry number
+	stamp_fileName = tempDoc.regStampFileName(0)
+	stamp_page = CLng(tempDoc.regStampPage(0))
 	stamp_x = CLng(tempDoc.Getitemvalue("regStampX")(0))	
 	stamp_y = CLng(tempDoc.Getitemvalue("regStampY")(0))	
 	stamp_w = CLng(tempDoc.Getitemvalue("regStampWidth")(0))	
 	stamp_h = CLng(tempDoc.Getitemvalue("regStampHeight")(0))	
-
-	If True Then
-		'TODO check if all needed args are here (both pages, fileNmaes, x, y, w, h'
-		Call pdf.addImageToPDF(sourceDir + stamp_fileName, stamp_page, stamp_x, stamp_y, stamp_w, stamp_h) 
-	End If
-
-	'Add signature stamp'
-	stamp_fileName = tempDoc.Getitemvalue("signatureStampFileName")(0)
-	stamp_page = CLng(tempDoc.Getitemvalue("signatureStampPage")(0))
-	stamp_x = CLng(tempDoc.Getitemvalue("signatureStampX")(0))	
-	stamp_y = CLng(tempDoc.Getitemvalue("signatureStampY")(0))	
-	stamp_w = CLng(tempDoc.Getitemvalue("signatureStampWidth")(0))	
-	stamp_h = CLng(tempDoc.Getitemvalue("signatureStampHeight")(0))
+	Call pdf.addImageToPDF(sourceDir + stamp_fileName, stamp_page, stamp_x, stamp_y, stamp_w, stamp_h)
 	
-	If True Then
-		'TODO check if all needed args are here (both pages, fileNmaes, x, y, w, h'
+	'Add signature stamp
+	'NB! this was used for tests
+	Dim counter As Integer
+	counter = 0
+	ForAll signatureStamp In tempDoc.signatureStampFileName		
+		stamp_fileName = signatureStamp
+		stamp_page = CLng(doc.InRS_Pages(0))
+		If counter = 0 Then
+			stamp_x = CLng(80)
+			stamp_y = CLng(230)
+		Else
+			stamp_x = CLng(80)
+			stamp_y = CLng(200)
+		End If
+			
+		stamp_w = CLng(tempDoc.Getitemvalue("signatureStampWidth")(0))	
+		stamp_h = CLng(tempDoc.Getitemvalue("signatureStampHeight")(0))
+		
 		Call pdf.addImageToPDF(sourceDir + stamp_fileName, stamp_page, stamp_x, stamp_y, stamp_w, stamp_h) 
-	End If
+		
+		counter = counter + 1
+		
+	End ForAll
+
+	
 	
 	Call pdf.savePdfToFile(sourceDir + signedPdfFileName)
 
-	Call tempDoc.Replaceitemvalue("pathsToZip", ArrayAppend(tempDoc.pathsToZip, sourceDir + signedPdfFileName))
-	Call doc.Replaceitemvalue("mainDocs", signedPdfFileName)
-	
-	addStampImagesToPfd = True
-
-End Function
+End Sub
 %REM
 	
 %END REM

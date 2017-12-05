@@ -9,7 +9,7 @@ Dim pathToTempDir As String
 
 Dim pathToMainDoc As String
 Dim numberOfPages As String
-Dim pathToP7s As String
+Dim pathsToP7s() As String
 
 Dim pathToAppendix As String
 Dim appendixes() As Variant
@@ -32,81 +32,71 @@ Sub Initialize
 	Dim sysAlias As String
 	Dim baseAlias As String
 	
+	
+	
 	pathToMainDoc = ""
-	pathToP7s = ""
+	ReDim pathsTop7s(0)
 	appendixCounter = 0	
 	Set db = session.CurrentDatabase	
 	Set dc = db.UnprocessedDocuments
 
-	If dc.Count <> 1 Then
-		Error 1408, "Необходимо выбрать один документ."
-	End If
+	If dc.Count <> 1 Then Error 1408, "Необходимо выбрать один документ."
 	
 	Set doc = dc.GetFirstDocument
 	
-	If doc.Form(0) <> "OUK" Then
-		Error 1408, "Нужно выбрать карточку исходящего документа."
-	End If
+	If doc.Form(0) <> "OUK" Then Error 1408, "Нужно выбрать карточку исходящего документа."		
 	
 	'Only those who can edit can send
-	If Not TestActionRights(doc, "", doc.StatusAlias(0), "W") Then
-		Error 1408, "У вас недостаточно прав."
-	End If
+	If Not TestActionRights(doc, "", doc.StatusAlias(0), "W") Then Error 1408, "У вас недостаточно прав для отправки документа."
 	
 	'Get SysAlias and BaseAlias
 	Set profile = db.Getprofiledocument("BaseSets")
 	sysAlias = profile.SysAlias(0)
 	baseAlias = profile.BaseAlias(0)
-	If sysAlias = "" Or baseAlias = "" Then Error 1408, "Не удалось получить данные из профайла базы"
-	
-	
-	Set emfView = openView("(Emfs)", db)	
+	If sysAlias = "" Or baseAlias = "" Then Error 1408, "Не удалось получить данные из профайла базы"		
 
 	pathToTempDir = Environ("Temp")
-	If pathToTempDir = "" Then
-		Error 1408, "В операционной системе не определен временный каталог!"
-	End If	
+	If pathToTempDir = "" Then Error 1408, "В операционной системе не определен временный каталог!"
 	pathToTempDir = pathToTempDir + "\"
+	
 	
 	'Check document has main document in pdf/doc/docx format and number of pages is indicated; check document has p7s
 	'Extract nedded files
+	Set emfView = openView("(Emfs)", db)
 	Set dc = emfView.GetAllDocumentsByKey(doc.DocID(0))
 
-	If dc Is Nothing Then
-		Error 1408, "Не найдены вложения."
-	End If
-	If Not dc.Count > 0 Then
-		Error 1408, "Не найдены вложения."
-	End If
+	If dc Is Nothing Then Error 1408, "Не найдены вложения."
+	If Not dc.Count > 0 Then Error 1408, "Не найдены вложения."
+
 
 	Set emfDoc = dc.GetFirstDocument
 	Do While Not emfDoc Is Nothing 
 		
-		If emfDoc.DocsType(0) = "1" Then 'Type == "Документ"
+		If emfDoc.DocsType(0) = "1" Then 'Attachment of type "Документ"
+			If Not pathToMainDoc = "" Then
+				Error 1408, |Найдено несколько карточек вложений с типом "Документ"|
+			End If
 			
 			If emfDoc.HasItem("BodyAppendix") Then 'Document has e-signature	
-				Call processDocWithSignature(emfDoc)
+				Call processDocWithSignature(emfDoc, UBound(doc.h_PostIO))
 			ElseIf emfDoc.HasItem("Body") Then
 				Call processDocDefault(emfDoc)
 			End If	
 					
-		ElseIf emfDoc.DocsType(0) = "2" Then 'Attachment of type "Приложение"
-		
+		ElseIf emfDoc.DocsType(0) = "2" Then 'Attachment of type "Приложение"		
 			If emfDoc.HasItem("Body") Then
 				Call processAttachment(emfDoc)																	
 			End If	
-			
-				
 												
 		End If		
 		Set emfDoc = dc.GetNextDocument(emfDoc)				
 	Loop 
 
 	If pathToMainDoc = "" Then
-		Error 1408, "В карточке докумена не найдено вложение с типом Документ"
+		Error 1408, |В карточке докумена не найдено вложение с типом "Документ"|
 	End If	
 	
-	If pathToP7s = "" Then
+	If pathsToP7s(0) = "" Then
 		medoVersion = "2.2"
 	Else
 		medoVersion = "2.7"
@@ -138,7 +128,8 @@ Sub Initialize
 	adapterDoc.Log_Numbers = doc.IndexDoc(0)			'Document number
 	adapterDoc.Log_RgDate = doc.DateDoc(0)				'Document date
 	adapterDoc.InCard_Type = doc.ViewDoc(0)				'Document type
-	adapterDoc.Log_Sign = doc.h_FIOIO(0)				'Signer
+	adapterDoc.Log_Sign = doc.h_FIOIO					'Signer
+	adapterDoc.signerPost = doc.h_PostIO				'Signer post
 	adapterDoc.Log_SignDate = doc.DateDoc(0)			'Sign date (== document date)
 	adapterDoc.IO_InExec = doc.ListAuthor(0)			'Executor
 	adapterDoc.G_Phone = doc.PostPhone(0)				'Executor's phone number
@@ -146,7 +137,6 @@ Sub Initialize
 	adapterDoc.InRS_Appl = appendixCounter				'Number of attachments
 	adapterDoc.InRS_Pages = numberOfPages				'Document number of pages
 	adapterDoc.medo_version = medoVersion				'MEDO version
-	Stop
 	adapterDoc.sysAlias = sysAlias						'SysAlias
 	adapterDoc.baseAlias = baseAlias					'BaseAlias
 	
@@ -170,11 +160,17 @@ Sub Initialize
 	Loop 
 
 	
-	'Attach main document, e-signature, if exist, and appendixes
+	'Attach main document and e-signature if exist
 	Set rtitem = New NotesRichTextItem(adapterDoc, "Body")
 	Call rtitem.Embedobject(Embed_attachment, "", pathToMainDoc)
-	If pathToP7S <> "" Then Call rtitem.Embedobject(Embed_attachment, "", pathToP7S)
+	If pathsToP7S(0) <> "" Then
+		ForAll pathToP7s In pathsToP7s
+			Call rtitem.Embedobject(Embed_attachment, "", pathToP7s)
+		End ForAll
+	End If
+	 
 	
+	'Attach appendixes if exist
 	If appendixCounter > 0 Then
 		Set rtitem = New NotesRichTextItem(adapterDoc, "BodyAppendix")
 		ForAll apx In appendixes
@@ -209,58 +205,21 @@ TRAP_ERROR:
 End Sub
 Sub processAttachment(emfDoc As NotesDocument)
 	Dim rtitem As Variant
-	Dim eObject As NotesEmbeddedObject
-	Dim extractFileName As String
-
 	
 	Set rtitem = emfDoc.GetFirstItem("Body")
 	If (rtitem.Type = RICHTEXT) Then
 		If Not IsEmpty(rtitem.EmbeddedObjects) Then	
-			Set eObject = rtitem.EmbeddedObjects(0)
-			If (eObject.Type = EMBED_ATTACHMENT) Then
-				If appendixCounter < 10 Then
-					extractFileName = "attachment00" + CStr(appendixCounter) 	
-				ElseIf	appendixCounter < 100 Then
-					extractFileName = "attachment0" + CStr(appendixCounter)
-				Else
-					extractFileName = "attachment" + CStr(appendixCounter)
-				End If
-				extractFileName = extractFileName + "." + StrRightBack(eObject.Source, ".")
-				pathToAppendix = pathToTempDir & extractFileName 						
-				Call eObject.ExtractFile(pathToAppendix)
-				ReDim Preserve appendixes(appendixCounter)
-				appendixes(appendixCounter) = pathToAppendix
-				
-				'If attachment has e-signature
-				If emfDoc.HasItem("BodyAppendix") Then
-					Set rtitem = emfDoc.GetFirstItem("BodyAppendix")
-					If (rtitem.Type = RICHTEXT) Then
-						If Not IsEmpty(rtitem.EmbeddedObjects) Then	
-							Set eObject = rtitem.EmbeddedObjects(0)
-							If (eObject.Type = EMBED_ATTACHMENT) Then
-								If appendixCounter < 10 Then
-									extractFileName = "attachmentsSignature00" + CStr(appendixCounter) 	
-								ElseIf	appendixCounter < 100 Then
-									extractFileName = "attachmentsSignature0" + CStr(appendixCounter)
-								Else
-									extractFileName = "attachmentsSignature" + CStr(appendixCounter)
-								End If
-								extractFileName = extractFileName + "." + StrRightBack(eObject.Source, ".")
-								pathToAppendix = pathToTempDir & extractFileName						
-								Call eObject.ExtractFile(pathToAppendix)
-								ReDim Preserve appendixes(appendixCounter)
-								appendixes(appendixCounter) = pathToAppendix								
-							End If
-						End If
-					End If
-				End If
-				
-				appendixCounter = appendixCounter + 1
-			End If
+			ForAll o In rtitem.EmbeddedObjects
+				If (o.Type = EMBED_ATTACHMENT) Then					
+					pathToAppendix = pathToTempDir & o.Source 						
+					Call o.ExtractFile(pathToAppendix)
+					ReDim Preserve appendixes(appendixCounter)
+					appendixes(appendixCounter) = pathToAppendix				
+					appendixCounter = appendixCounter + 1
+				End If						
+			End ForAll
 		End If
-	End If
-	
-	
+	End If	
 	
 End Sub
 
@@ -314,8 +273,9 @@ Sub processDocDefault(emfDoc As NotesDocument)
 		End If
 	End If		
 End Sub
-Sub processDocWithSignature(emfDoc As NotesDocument)
+Sub processDocWithSignature(emfDoc As NotesDocument, signersNumber As Integer)
 	Dim rtitem As Variant
+	Dim pathToP7s As String
 	
 	'Check if number of pages is indicated
 	If Trim(emfDoc.PageCount(0)) = "" Then
@@ -331,6 +291,7 @@ Sub processDocWithSignature(emfDoc As NotesDocument)
 			ForAll o In rtitem.EmbeddedObjects
 				If (o.Type = EMBED_ATTACHMENT) Then
 					If LCase(StrRightBack(o.Source, ".")) = "pdf" Then
+						numberOfPages = emfDoc.PageCount(0)
 						pathToMainDoc = pathToTempDir & o.Source
 						Call o.ExtractFile(pathToMainDoc)
 					End If
@@ -345,12 +306,25 @@ Sub processDocWithSignature(emfDoc As NotesDocument)
 			ForAll o In rtitem.EmbeddedObjects
 				If (o.Type = EMBED_ATTACHMENT) Then
 					If LCase(StrRightBack(o.Source, ".")) = "p7s" Then
+						
 						pathToP7s = pathToTempDir & o.Source
+						
+						If pathsTop7s(0) = "" Then
+							pathsTop7s(0) = pathToP7s
+						Else
+							ReDim Preserve pathsTop7s(UBound(pathsTop7s)+1)
+							pathsTop7s(UBound(pathsTop7s)) = pathToP7s	
+						End If
+										
 						Call o.ExtractFile(pathToP7s)
 					End If
 				End If
 			End ForAll
 		End If
+	End If
+	
+	If Ubound(pathsTop7s) <> signersNumber Then
+		Error 1408, "Количество файлов электронных подписей не равно количеству лиц, подписавших документ"		
 	End If
 	
 End Sub
